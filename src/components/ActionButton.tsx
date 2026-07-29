@@ -10,6 +10,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { Accent, fonts, palette, radius, shadow, textGlow } from '../theme';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -36,9 +37,10 @@ export const ActionButton: React.FC<Props> = ({
 }) => {
   const pressed = useSharedValue(0);
   const breathe = useSharedValue(0);
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
-    if (!pulse || disabled) {
+    if (!pulse || disabled || reduceMotion) {
       breathe.value = withTiming(0, { duration: 220 });
       return;
     }
@@ -50,7 +52,7 @@ export const ActionButton: React.FC<Props> = ({
       -1,
       false,
     );
-  }, [pulse, disabled, breathe]);
+  }, [pulse, disabled, breathe, reduceMotion]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: 1 - pressed.value * 0.03 + breathe.value * 0.012 }],

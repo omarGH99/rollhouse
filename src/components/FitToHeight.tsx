@@ -11,8 +11,13 @@ import {
 /**
  * Below this, shrinking does more harm than scrolling: text stops being
  * comfortably legible and tap targets get too small to hit reliably.
+ *
+ * Deliberately conservative. Scaling is applied to the whole board including
+ * its controls, so an aggressive floor quietly undoes any work done on touch
+ * target sizes — a 38px row at 0.72 is 27px again. Scrolling a scorecard is
+ * ordinary; an unhittable button is not.
  */
-export const MIN_SCALE = 0.72;
+export const MIN_SCALE = 0.85;
 
 /** Slack in px, absorbing fractional layout heights. */
 const FIT_EPSILON = 2;

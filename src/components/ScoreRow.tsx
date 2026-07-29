@@ -22,6 +22,7 @@ import {
   seatAccent,
   spacing,
 } from '../theme';
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { Category, PlayerIndex, ScoreSheet } from '../types';
 
 /** Column width shrinks as seats are added, so four still fit on a phone. */
@@ -35,9 +36,12 @@ const PreviewScore: React.FC<{
   compact: boolean;
 }> = ({ points, nonce, compact }) => {
   const pulse = useSharedValue(0);
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
     pulse.value = 0;
+    // Decorative only — the number is legible without it.
+    if (reduceMotion) return;
     pulse.value = withRepeat(
       withSequence(
         withTiming(1, { duration: 900, easing: Easing.inOut(Easing.quad) }),
@@ -46,7 +50,7 @@ const PreviewScore: React.FC<{
       -1,
       false,
     );
-  }, [nonce, pulse]);
+  }, [nonce, pulse, reduceMotion]);
 
   const style = useAnimatedStyle(() => ({
     opacity: 0.3 + pulse.value * 0.45,
@@ -182,6 +186,9 @@ const ScoreRowInner: React.FC<Props> = ({
           style={[
             styles.label,
             isYahtzee && styles.labelYahtzee,
+            // Struck through when spent. Roughly 1 in 12 men cannot separate
+            // the green/red pair, so availability must not rest on colour.
+            !available && styles.labelSpent,
             { color: statusColor },
           ]}
         >
@@ -269,8 +276,9 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    // Tight enough that 13 rows plus summaries clear a single screen.
-    paddingVertical: spacing(1),
+    // Sized for the finger, not the pixel budget: this is the app's primary
+    // control, repeated thirteen times.
+    paddingVertical: spacing(2.5),
     paddingHorizontal: spacing(2),
   },
   icon: {
@@ -283,6 +291,9 @@ const styles = StyleSheet.create({
     fontSize: 15.5,
     fontWeight: '700',
     letterSpacing: 0.2,
+  },
+  labelSpent: {
+    textDecorationLine: 'line-through',
   },
   labelYahtzee: {
     letterSpacing: 2,

@@ -1,11 +1,30 @@
 /**
- * Tests cover `src/logic` only — it is pure TypeScript with no React or React
- * Native imports, so it needs no native transform and runs in plain Node.
- * Component tests would need the `jest-expo` preset instead.
+ * Two projects, because the two halves of the codebase have different needs.
+ *
+ * `src/logic` is pure TypeScript with no React or React Native imports, so it
+ * runs fastest and most simply under ts-jest in plain Node. Components need the
+ * full `jest-expo` transform to handle React Native's untranspiled ESM, native
+ * module mocks, and the asset pipeline.
  */
 module.exports = {
-  preset: 'ts-jest',
-  testEnvironment: 'node',
-  roots: ['<rootDir>/src/logic'],
-  testMatch: ['**/*.test.ts'],
+  projects: [
+    {
+      displayName: 'logic',
+      preset: 'ts-jest',
+      testEnvironment: 'node',
+      roots: ['<rootDir>/src/logic'],
+      testMatch: ['**/*.test.ts'],
+    },
+    {
+      displayName: 'ui',
+      preset: 'jest-expo',
+      roots: ['<rootDir>/src/components', '<rootDir>/src/hooks'],
+      testMatch: ['**/*.test.tsx'],
+      setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
+      // React Native and friends ship untranspiled; everything else stays raw.
+      transformIgnorePatterns: [
+        'node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg))',
+      ],
+    },
+  ],
 };

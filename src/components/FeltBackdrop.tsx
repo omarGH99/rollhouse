@@ -1,5 +1,12 @@
 import React, { useEffect } from 'react';
-import { DimensionValue, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import Svg, {
+  Defs,
+  LinearGradient,
+  RadialGradient,
+  Rect,
+  Stop,
+} from 'react-native-svg';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -9,58 +16,30 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { useReducedMotion } from '../hooks/useReducedMotion';
 import { Accent, palette, radius } from '../theme';
-
-/**
- * Steps used to fake a radial gradient without a gradient library. Many faint
- * rings rather than few strong ones — at low step counts the ring edges read as
- * visible banding instead of a soft falloff.
- */
-const RING_STEPS = 18;
 
 /** Thickness of the padded rail, in px. */
 const RAIL_WIDTH = 10;
 
-/** Soft circular haze: concentric discs whose overlap accumulates toward the centre. */
-const RadialHaze: React.FC<{
-  color: string;
-  size: number;
-  /** Alpha contributed by each ring; total opacity is roughly this × RING_STEPS. */
-  step: number;
-}> = ({ color, size, step }) => (
-  <View style={[styles.haze, { width: size, height: size }]}>
-    {Array.from({ length: RING_STEPS }, (_, i) => {
-      const t = i / (RING_STEPS - 1);
-      const ringSize = size * (1 - t * 0.78);
-      return (
-        <View
-          key={i}
-          style={[
-            styles.ring,
-            {
-              width: ringSize,
-              height: ringSize,
-              borderRadius: ringSize / 2,
-              backgroundColor: color,
-              opacity: step,
-            },
-          ]}
-        />
-      );
-    })}
-  </View>
-);
+const AnimatedSvg = Animated.createAnimatedComponent(Svg);
 
 /**
- * The table itself: green felt under a warm overhead light, with a slow drift so
- * the surface never looks perfectly static. Purely decorative — it never
- * intercepts touches. The active player's metal tints the light very faintly.
+ * The table: green baize under a warm overhead light, inside a padded oxblood
+ * rail. Purely decorative — it never intercepts touches.
+ *
+ * The gradients are real SVG rather than stacked Views. The previous version
+ * faked each one with concentric discs and sliced strips, which cost around
+ * eighty nodes and still banded visibly at the edges; this is three rects with
+ * a true falloff. The active player's metal tints the light very faintly.
  */
 const FeltBackdropInner: React.FC<{ accent: Accent }> = ({ accent }) => {
   const { width, height } = useWindowDimensions();
   const drift = useSharedValue(0);
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
+    if (reduceMotion) return;
     drift.value = withRepeat(
       withSequence(
         withTiming(1, { duration: 11000, easing: Easing.inOut(Easing.sin) }),
@@ -69,20 +48,19 @@ const FeltBackdropInner: React.FC<{ accent: Accent }> = ({ accent }) => {
       -1,
       false,
     );
-  }, [drift]);
+  }, [drift, reduceMotion]);
 
-  const lightStyle = useAnimatedStyle(() => ({
+  // The lamp breathes rather than travels, so the felt never looks static.
+  const lampStyle = useAnimatedStyle(() => ({
     opacity: 0.85 + drift.value * 0.15,
-    transform: [{ scale: 1 + drift.value * 0.04 }],
   }));
 
-  // The lamp hangs over the dice, not the centre of the screen.
-  const lightSize = Math.max(width * 1.9, height * 0.95);
-  const tintSize = width * 1.5;
+  const w = Math.max(width, 1);
+  const h = Math.max(height, 1);
 
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      {/* The padded oxblood rail: the table edge players lean on. */}
+      {/* Padded oxblood rail, lit from above and shadowed below. */}
       <View style={[StyleSheet.absoluteFill, styles.rail]} />
       <View style={[StyleSheet.absoluteFill, styles.railSheen]} />
 
@@ -90,85 +68,52 @@ const FeltBackdropInner: React.FC<{ accent: Accent }> = ({ accent }) => {
       <View style={styles.baize}>
         <View style={[StyleSheet.absoluteFill, styles.baizeFill]} />
 
-        {/*
-          Kept deliberately faint: these hazes stack multiplicatively over the
-          felt, and much past this the green desaturates to a milky olive.
-        */}
-        <Animated.View
-          style={[styles.lamp, { marginLeft: -lightSize / 2 }, lightStyle]}
+        <AnimatedSvg
+          style={[StyleSheet.absoluteFill, lampStyle]}
+          width={w}
+          height={h}
+          pointerEvents="none"
         >
-          <RadialHaze color="#F0DFAF" size={lightSize} step={0.0055} />
-        </Animated.View>
+          <Defs>
+            {/* Overhead lamp, hung above the dice rather than screen centre. */}
+            <RadialGradient id="lamp" cx="50%" cy="26%" rx="78%" ry="58%">
+              <Stop offset="0%" stopColor="#F0DFAF" stopOpacity={0.2} />
+              <Stop offset="55%" stopColor="#F0DFAF" stopOpacity={0.06} />
+              <Stop offset="100%" stopColor="#F0DFAF" stopOpacity={0} />
+            </RadialGradient>
 
-        <View style={[styles.tint, { marginLeft: -tintSize / 2 }]}>
-          <RadialHaze color={accent.main} size={tintSize} step={0.003} />
-        </View>
+            {/* A whisper of the active seat's metal in the light. */}
+            <RadialGradient id="tint" cx="50%" cy="30%" rx="62%" ry="46%">
+              <Stop offset="0%" stopColor={accent.main} stopOpacity={0.11} />
+              <Stop offset="100%" stopColor={accent.main} stopOpacity={0} />
+            </RadialGradient>
 
-        {/* Vignette: the lit table reads as a pool of light within the rail. */}
-        <EdgeFade edge="top" height="22%" strength={0.35} />
-        <EdgeFade edge="bottom" height="26%" strength={0.6} />
+            {/* Vignette, so the lit table reads as a pool of light. */}
+            <LinearGradient id="vignette" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0%" stopColor="#04140C" stopOpacity={0.42} />
+              <Stop offset="28%" stopColor="#04140C" stopOpacity={0} />
+              <Stop offset="70%" stopColor="#04140C" stopOpacity={0} />
+              <Stop offset="100%" stopColor="#04140C" stopOpacity={0.62} />
+            </LinearGradient>
+          </Defs>
+
+          <Rect x={0} y={0} width={w} height={h} fill="url(#lamp)" />
+          <Rect x={0} y={0} width={w} height={h} fill="url(#tint)" />
+          <Rect x={0} y={0} width={w} height={h} fill="url(#vignette)" />
+        </AnimatedSvg>
       </View>
     </View>
   );
 };
 
 /**
- * Around eighty purely decorative Views, none of which depend on game state.
- * `accent` is an identity-stable object per seat, so this only re-renders when
- * the turn actually passes to a different player.
+ * Depends on nothing but the seat accent, which is an identity-stable object,
+ * so this only re-renders when the turn passes to a different player.
  */
 export const FeltBackdrop = React.memo(FeltBackdropInner);
 FeltBackdrop.displayName = 'FeltBackdrop';
 
-const FADE_STEPS = 12;
-
-/**
- * Vertical fade to the room colour. Built from stacked slices because a single
- * solid rect leaves a hard horizontal seam across the felt.
- */
-const EdgeFade: React.FC<{
-  edge: 'top' | 'bottom';
-  height: DimensionValue;
-  strength: number;
-}> = ({ edge, height, strength }) => (
-  <View
-    style={[styles.fade, edge === 'top' ? { top: 0 } : { bottom: 0 }, { height }]}
-  >
-    {Array.from({ length: FADE_STEPS }, (_, i) => {
-      // Densest at the screen edge, clear where it meets the lit table.
-      const t = edge === 'top' ? 1 - i / (FADE_STEPS - 1) : i / (FADE_STEPS - 1);
-      return (
-        <View
-          key={i}
-          style={[
-            styles.fadeSlice,
-            { opacity: t * t * strength },
-          ]}
-        />
-      );
-    })}
-  </View>
-);
-
 const styles = StyleSheet.create({
-  haze: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  // Absolute with no insets, so the parent's centering still positions it.
-  ring: {
-    position: 'absolute',
-  },
-  lamp: {
-    position: 'absolute',
-    top: '-22%',
-    left: '50%',
-  },
-  tint: {
-    position: 'absolute',
-    top: '2%',
-    left: '50%',
-  },
   rail: {
     backgroundColor: palette.rail,
   },
@@ -194,15 +139,5 @@ const styles = StyleSheet.create({
   },
   baizeFill: {
     backgroundColor: palette.felt,
-  },
-  fade: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-  },
-  fadeSlice: {
-    flex: 1,
-    // Fades toward the deep table shadow, not the rail colour.
-    backgroundColor: '#04140C',
   },
 });

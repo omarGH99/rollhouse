@@ -20,6 +20,7 @@ import { SetupScreen } from './src/components/SetupScreen';
 import { StatsScreen } from './src/components/StatsScreen';
 import { TurnBanner } from './src/components/TurnBanner';
 import { Wordmark } from './src/components/Wordmark';
+import { awaitsTurnStart, humanSeatCount } from './src/logic/gameReducer';
 import { useYahtzeeGame } from './src/hooks/useYahtzeeGame';
 import { palette, seatAccent, spacing } from './src/theme';
 import { Player } from './src/types';
@@ -69,15 +70,9 @@ const Board: React.FC = () => {
   const accent = seatAccent(state.currentPlayer);
   const isOver = state.phase === 'gameover';
 
-  /**
-   * The curtain exists to stop one human reading another's board. With at most
-   * one human seat there is nobody to hide from, so it is skipped entirely.
-   */
-  const humanCount = state.players.filter((p) => p.kind === 'human').length;
-  const showHandoff =
-    state.phase === 'handoff' &&
-    humanCount > 1 &&
-    state.players[state.incomingPlayer].kind === 'human';
+  // Shared with the turn driver, so the two can never disagree about whether
+  // there is something for a person to tap.
+  const showHandoff = awaitsTurnStart(state);
 
   // A bot's handoff resolves itself, but the board must still be inert.
   const boardLocked = state.phase === 'handoff' || isOver || aiThinking;
@@ -192,6 +187,7 @@ const Board: React.FC = () => {
         completedRound={completedRound}
         roundFullyComplete={state.incomingPlayer === 0}
         lastScored={state.lastScored}
+        passDevice={humanSeatCount(state) > 1}
         canUndo={canUndo}
         onBegin={beginTurn}
         onUndo={undo}

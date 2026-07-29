@@ -100,6 +100,27 @@ export const activePlayer = (state: GameState): Player =>
 export const isAiTurn = (state: GameState): boolean =>
   state.phase === 'turn' && activePlayer(state).kind === 'ai';
 
+export const humanSeatCount = (state: GameState): number =>
+  state.players.filter((p) => p.kind === 'human').length;
+
+/**
+ * Whether the game is waiting for a person to start their turn.
+ *
+ * The between-turns screen is a *turn boundary*, not a privacy screen —
+ * Yahtzee has no hidden information, every score is public on a shared card,
+ * and the screen even reports the move just played. What it actually buys is a
+ * deliberate stop, so nobody rolls on someone else's turn and everyone gets a
+ * beat to see what happened.
+ *
+ * So the rule is simply "is a person up next": bots start their own turns,
+ * people tap in. It lives here, beside the reducer, because the UI and the
+ * turn driver both need the answer and must never disagree — if the driver
+ * waits for a tap while the UI renders nothing to tap, the game deadlocks.
+ */
+export const awaitsTurnStart = (state: GameState): boolean =>
+  state.phase === 'handoff' &&
+  state.players[state.incomingPlayer].kind === 'human';
+
 /** Pure state transition. Illegal actions return the same object reference. */
 export const gameReducer = (state: GameState, action: GameAction): GameState => {
   switch (action.type) {

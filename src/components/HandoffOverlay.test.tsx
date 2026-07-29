@@ -18,6 +18,7 @@ const setup = (props: Partial<React.ComponentProps<typeof HandoffOverlay>> = {})
       completedRound={3}
       roundFullyComplete={false}
       lastScored={{ player: 0, category: 'chance', points: 21 }}
+      passDevice
       canUndo={false}
       onBegin={jest.fn()}
       onUndo={jest.fn()}
@@ -33,8 +34,29 @@ describe('visibility', () => {
 
   it('names the incoming player', () => {
     setup();
-    expect(screen.getByText(/Pass the device to/)).toBeTruthy();
     expect(screen.getByText('PLAYER 2')).toBeTruthy();
+  });
+});
+
+describe('wording', () => {
+  it('asks for a physical handover when two people share the device', () => {
+    setup({ passDevice: true });
+    expect(screen.getByText('Pass the device to')).toBeTruthy();
+    expect(screen.getByText(/Hand the device over/)).toBeTruthy();
+  });
+
+  it('just announces the turn when nobody else is holding it', () => {
+    setup({ passDevice: false });
+    expect(screen.getByText('Up next')).toBeTruthy();
+    expect(screen.queryByText('Pass the device to')).toBeNull();
+  });
+
+  it('makes no claim about hiding the board', () => {
+    // Yahtzee has no hidden information; the old "no peeking" copy oversold
+    // what this screen does.
+    setup({ passDevice: true });
+    expect(screen.queryByText(/peek/i)).toBeNull();
+    expect(screen.queryByText(/hidden/i)).toBeNull();
   });
 });
 

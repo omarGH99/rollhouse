@@ -24,18 +24,23 @@ interface Props {
   /** True once every seat has taken its turn in that round. */
   roundFullyComplete: boolean;
   lastScored: { player: PlayerIndex; category: Category; points: number } | null;
+  /** More than one human seat, so the device physically changes hands. */
+  passDevice: boolean;
   canUndo: boolean;
   onBegin: () => void;
   onUndo: () => void;
 }
 
 /**
- * Privacy curtain between turns. Blurs *and* scrims the board so the incoming
- * player cannot read the previous player's dice or scorecard.
+ * The boundary between turns.
  *
- * Undo lives here rather than on the board because this is the one moment the
- * player who just scored is still holding the device — so correcting a misclick
- * cannot leak the board to anyone else.
+ * Not a privacy screen: Yahtzee has no hidden information — every score is
+ * public on a shared card — and this very screen reports the move just played.
+ * What it buys is a deliberate stop, so nobody rolls on someone else's turn,
+ * and a beat to see what happened.
+ *
+ * Undo lives here because this is the one moment the player who just scored is
+ * still the one holding the device.
  */
 export const HandoffOverlay: React.FC<Props> = ({
   visible,
@@ -44,6 +49,7 @@ export const HandoffOverlay: React.FC<Props> = ({
   completedRound,
   roundFullyComplete,
   lastScored,
+  passDevice,
   canUndo,
   onBegin,
   onUndo,
@@ -111,7 +117,9 @@ export const HandoffOverlay: React.FC<Props> = ({
           </View>
         ) : null}
 
-        <Text style={styles.headline}>Pass the device to</Text>
+        <Text style={styles.headline}>
+          {passDevice ? 'Pass the device to' : 'Up next'}
+        </Text>
         <Text
           numberOfLines={1}
           style={[styles.player, { color: accent.main, ...textGlow(accent.main, 12) }]}
@@ -119,7 +127,11 @@ export const HandoffOverlay: React.FC<Props> = ({
           {incoming.name.toUpperCase()}
         </Text>
 
-        <Text style={styles.caution}>Board hidden until you tap in — no peeking.</Text>
+        <Text style={styles.caution}>
+          {passDevice
+            ? 'Hand the device over before tapping in.'
+            : 'Take a look at the board, then tap in when you are ready.'}
+        </Text>
 
         <ActionButton
           label="START MY TURN"

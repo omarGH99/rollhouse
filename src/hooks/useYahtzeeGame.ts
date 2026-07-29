@@ -11,6 +11,7 @@ import {
   canUndo,
   createSession,
   diceValues,
+  awaitsTurnStart,
   isAiTurn,
   sessionReducer,
 } from '../logic/gameReducer';
@@ -217,14 +218,17 @@ export const useYahtzeeGame = (): YahtzeeGame => {
   /* AI turn driver                                                          */
   /* ---------------------------------------------------------------------- */
 
-  // Auto-advance the handoff when the incoming seat is a bot: nobody needs a
-  // privacy curtain against a computer.
+  /**
+   * Bots start their own turns; people tap in. Keyed on the same predicate the
+   * UI uses to decide whether to render a tap target, so the two cannot
+   * disagree and strand the game mid-handoff.
+   */
   useEffect(() => {
     if (!ready || state.phase !== 'handoff') return;
-    if (state.players[state.incomingPlayer].kind !== 'ai') return;
+    if (awaitsTurnStart(state)) return;
     const timer = setTimeout(() => dispatch({ type: 'BEGIN_TURN' }), AI_HANDOFF_MS);
     return () => clearTimeout(timer);
-  }, [ready, state.phase, state.incomingPlayer, state.players]);
+  }, [ready, state]);
 
   /**
    * One scheduled step per render while the bot is on turn. Each step either

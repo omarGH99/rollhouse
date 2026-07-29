@@ -1,4 +1,5 @@
 import {
+  awaitsTurnStart,
   DICE_COUNT,
   GameSession,
   HISTORY_LIMIT,
@@ -353,5 +354,73 @@ describe('undo', () => {
     expect(session.state.phase).toBe('gameover');
     session = sessionReducer(session, { type: 'UNDO' });
     expect(session.state.phase).toBe('turn');
+  });
+});
+
+describe('turn handoff', () => {
+  const seat = (kind: 'human' | 'ai', i: number): Player => ({
+    name: kind === 'ai' ? `Bot ${i + 1}` : `Player ${i + 1}`,
+    kind,
+  });
+
+  /** Advance exactly as the app does: bots auto-start, people tap in. */
+  const advance = (state: GameState): GameState =>
+    state.phase === 'handoff' && !awaitsTurnStart(state)
+      ? gameReducer(state, { type: 'BEGIN_TURN' })
+      : state;
+
+  it('waits for a person to start their own turn', () => {
+    const state = playTurn(createInitialState(humans(2)));
+    expect(state.phase).toBe('handoff');
+    expect(awaitsTurnStart(state)).toBe(true);
+    // Nothing auto-advances, so the tap target must be shown.
+    expect(advance(state)).toBe(state);
+  });
+
+  it('starts a bot turn without waiting', () => {
+    const state = playTurn(
+      createInitialState([seat('human', 0), seat('ai', 1)]),
+    );
+    expect(awaitsTurnStart(state)).toBe(false);
+    expect(advance(state).phase).toBe('turn');
+  });
+
+  it('hands back to the only human after a bot plays', () => {
+    // Regression: the handoff screen used to be suppressed whenever there was
+    // a single human, while the driver only auto-advanced for incoming bots.
+    // Nothing then advanced the turn and the game stalled after every bot move.
+    let state = createInitialState([seat('human', 0), seat('ai', 1)]);
+    state = advance(playTurn(state)); // human scores, bot's turn begins
+    expect(state.currentPlayer).toBe(1);
+
+    state = playTurn(state); // bot scores
+    expect(state.incomingPlayer).toBe(0);
+    expect(awaitsTurnStart(state)).toBe(true);
+  });
+
+  it('never strands a game: every handoff is either tappable or automatic', () => {
+    const layouts: Player[][] = [
+      [seat('human', 0), seat('ai', 1)],
+      [seat('ai', 0), seat('human', 1)],
+      [seat('ai', 0), seat('ai', 1)],
+      [seat('human', 0), seat('human', 1), seat('ai', 2)],
+    ];
+
+    for (const players of layouts) {
+      let state = createInitialState(players);
+      let guard = 0;
+      while (state.phase !== 'gameover' && guard < 500) {
+        guard += 1;
+        if (state.phase === 'handoff') {
+          // A handoff must be resolvable one way or the other.
+          const tappable = awaitsTurnStart(state);
+          state = gameReducer(state, { type: 'BEGIN_TURN' });
+          expect(tappable || state.phase === 'turn').toBe(true);
+        } else {
+          state = playTurn(state);
+        }
+      }
+      expect(state.phase).toBe('gameover');
+    }
   });
 });

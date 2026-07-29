@@ -23,6 +23,7 @@ import {
   spacing,
 } from '../theme';
 import { useReducedMotion } from '../hooks/useReducedMotion';
+import { SCORE_ROW_PADDING } from '../layout';
 import { Category, PlayerIndex, ScoreSheet } from '../types';
 
 /** Column width shrinks as seats are added, so four still fit on a phone. */
@@ -276,9 +277,8 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    // Sized for the finger, not the pixel budget: this is the app's primary
-    // control, repeated thirteen times.
-    paddingVertical: spacing(2.5),
+    // Row height is a shared knob, paired with the scale floor. See layout.ts.
+    paddingVertical: SCORE_ROW_PADDING,
     paddingHorizontal: spacing(2),
   },
   icon: {

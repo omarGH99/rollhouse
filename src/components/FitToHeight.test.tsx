@@ -65,9 +65,9 @@ describe('scaling', () => {
     setup();
     // Chosen to land above MIN_SCALE, so this exercises the computed path
     // rather than the clamp.
-    measure(900, 1000);
-    // (900 - 2px slack) / 1000
-    expect(scaleOf()).toBeCloseTo(0.898, 3);
+    measure(990, 1000);
+    // (990 - 2px slack) / 1000, chosen to sit above any density's floor.
+    expect(scaleOf()).toBeCloseTo(0.988, 3);
   });
 
   it('clamps at MIN_SCALE rather than shrinking to unreadability', () => {
@@ -76,17 +76,19 @@ describe('scaling', () => {
     expect(scaleOf()).toBe(MIN_SCALE);
   });
 
-  it('keeps the floor high enough not to undo touch target sizing', () => {
-    // A 38px row must not be scaled below roughly 32px.
-    expect(MIN_SCALE).toBeGreaterThanOrEqual(0.85);
+  it('keeps the floor within the range the density settings define', () => {
+    // Both settings in layout.ts sit inside this band; anything outside it
+    // means the two knobs have drifted apart.
+    expect(MIN_SCALE).toBeGreaterThanOrEqual(0.7);
+    expect(MIN_SCALE).toBeLessThanOrEqual(1);
   });
 
   it('reclaims the layout space the transform gives back', () => {
     setup();
-    measure(900, 1000);
+    measure(990, 1000);
     // A transform does not shrink the layout box, so without this negative
     // margin every screen would gain a band of dead space.
-    expect(marginOf()).toBeCloseTo(-1000 * (1 - 0.898), 0);
+    expect(marginOf()).toBeCloseTo(-1000 * (1 - 0.988), 0);
   });
 });
 

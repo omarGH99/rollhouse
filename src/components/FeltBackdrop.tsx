@@ -22,8 +22,6 @@ import { Accent, palette, radius } from '../theme';
 /** Thickness of the padded rail, in px. */
 const RAIL_WIDTH = 10;
 
-const AnimatedSvg = Animated.createAnimatedComponent(Svg);
-
 /**
  * The table: green baize under a warm overhead light, inside a padded oxblood
  * rail. Purely decorative — it never intercepts touches.
@@ -68,12 +66,18 @@ const FeltBackdropInner: React.FC<{ accent: Accent }> = ({ accent }) => {
       <View style={styles.baize}>
         <View style={[StyleSheet.absoluteFill, styles.baizeFill]} />
 
-        <AnimatedSvg
-          style={[StyleSheet.absoluteFill, lampStyle]}
-          width={w}
-          height={h}
+        {/*
+          The opacity animation drives a plain View wrapping the SVG rather
+          than the Svg element itself. react-native-svg's web build writes
+          styles straight onto a CSSStyleDeclaration, and an array style — the
+          shape Reanimated hands it — makes the browser reject the assignment
+          and log "Failed to set an indexed property".
+        */}
+        <Animated.View
           pointerEvents="none"
+          style={[StyleSheet.absoluteFill, lampStyle]}
         >
+        <Svg width={w} height={h} pointerEvents="none">
           <Defs>
             {/* Overhead lamp, hung above the dice rather than screen centre. */}
             <RadialGradient id="lamp" cx="50%" cy="26%" rx="78%" ry="58%">
@@ -100,7 +104,8 @@ const FeltBackdropInner: React.FC<{ accent: Accent }> = ({ accent }) => {
           <Rect x={0} y={0} width={w} height={h} fill="url(#lamp)" />
           <Rect x={0} y={0} width={w} height={h} fill="url(#tint)" />
           <Rect x={0} y={0} width={w} height={h} fill="url(#vignette)" />
-        </AnimatedSvg>
+        </Svg>
+        </Animated.View>
       </View>
     </View>
   );

@@ -8,16 +8,14 @@ import {
   ViewStyle,
 } from 'react-native';
 
+import { MIN_BOARD_SCALE } from '../layout';
+
 /**
- * Below this, shrinking does more harm than scrolling: text stops being
- * comfortably legible and tap targets get too small to hit reliably.
- *
- * Deliberately conservative. Scaling is applied to the whole board including
- * its controls, so an aggressive floor quietly undoes any work done on touch
- * target sizes — a 38px row at 0.72 is 27px again. Scrolling a scorecard is
- * ordinary; an unhittable button is not.
+ * Below this, shrinking does more harm than scrolling. Paired with the row
+ * height in layout.ts: scaling applies to the whole board including its
+ * controls, so this is a floor on touch target size too.
  */
-export const MIN_SCALE = 0.85;
+export const MIN_SCALE = MIN_BOARD_SCALE;
 
 /** Slack in px, absorbing fractional layout heights. */
 const FIT_EPSILON = 2;

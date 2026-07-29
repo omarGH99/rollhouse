@@ -32,7 +32,7 @@
       "bundler": "metro"
     },
     "assetBundlePatterns": [
-      "**/*"
+      "assets/**/*"
     ],
     "runtimeVersion": {
       "policy": "sdkVersion"

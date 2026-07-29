@@ -56,7 +56,7 @@ const RadialHaze: React.FC<{
  * the surface never looks perfectly static. Purely decorative — it never
  * intercepts touches. The active player's metal tints the light very faintly.
  */
-export const FeltBackdrop: React.FC<{ accent: Accent }> = ({ accent }) => {
+const FeltBackdropInner: React.FC<{ accent: Accent }> = ({ accent }) => {
   const { width, height } = useWindowDimensions();
   const drift = useSharedValue(0);
 
@@ -111,6 +111,14 @@ export const FeltBackdrop: React.FC<{ accent: Accent }> = ({ accent }) => {
     </View>
   );
 };
+
+/**
+ * Around eighty purely decorative Views, none of which depend on game state.
+ * `accent` is an identity-stable object per seat, so this only re-renders when
+ * the turn actually passes to a different player.
+ */
+export const FeltBackdrop = React.memo(FeltBackdropInner);
+FeltBackdrop.displayName = 'FeltBackdrop';
 
 const FADE_STEPS = 12;
 

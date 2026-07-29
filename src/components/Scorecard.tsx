@@ -111,7 +111,7 @@ export const Scorecard: React.FC<Props> = ({
       <ScoreRow
         key={category}
         category={category}
-        values={scores.map((sheet) => sheet[category])}
+        scores={scores}
         currentPlayer={currentPlayer}
         accent={accent}
         preview={previews[category]}

@@ -22,7 +22,7 @@ import {
   seatAccent,
   spacing,
 } from '../theme';
-import { Category, PlayerIndex } from '../types';
+import { Category, PlayerIndex, ScoreSheet } from '../types';
 
 /** Column width shrinks as seats are added, so four still fit on a phone. */
 export const cellWidth = (playerCount: number): number =>
@@ -71,8 +71,12 @@ const PreviewScore: React.FC<{
 
 interface Props {
   category: Category;
-  /** One entry per seat, parallel to the game's player list. */
-  values: (number | null)[];
+  /**
+   * Every seat's sheet. Passed whole rather than as a pre-sliced values array
+   * because `scores` keeps its identity while only the dice change — a fresh
+   * array per render would break the memo below on every roll and hold.
+   */
+  scores: ScoreSheet[];
   currentPlayer: PlayerIndex;
   accent: Accent;
   /** Points the current player would score right now, if the row is open. */
@@ -88,9 +92,9 @@ interface Props {
   onSelect: (category: Category) => void;
 }
 
-export const ScoreRow: React.FC<Props> = ({
+const ScoreRowInner: React.FC<Props> = ({
   category,
-  values,
+  scores,
   currentPlayer,
   accent,
   preview,
@@ -119,6 +123,7 @@ export const ScoreRow: React.FC<Props> = ({
 
   const flashStyle = useAnimatedStyle(() => ({ opacity: flash.value * 0.8 }));
 
+  const values = scores.map((sheet) => sheet[category]);
   const isYahtzee = category === 'yahtzee';
   const width = cellWidth(values.length);
   const compact = values.length >= 4;
@@ -243,6 +248,15 @@ export const ScoreRow: React.FC<Props> = ({
     </Animated.View>
   );
 };
+
+/**
+ * Thirteen of these are mounted at once and the AI driver dispatches roughly
+ * five times a second while it plays, so re-rendering them all on every tick
+ * was the app's hottest path. Every prop is either a primitive or an
+ * identity-stable object, so the default shallow comparison is enough.
+ */
+export const ScoreRow = React.memo(ScoreRowInner);
+ScoreRow.displayName = 'ScoreRow';
 
 const styles = StyleSheet.create({
   rowWrap: {

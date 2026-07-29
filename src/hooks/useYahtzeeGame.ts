@@ -142,38 +142,45 @@ export const useYahtzeeGame = (): YahtzeeGame => {
 
   const aiTurn = isAiTurn(state);
 
+  /**
+   * Latest state, readable from callbacks without becoming a dependency.
+   *
+   * The action callbacks are handed down to memoised components, so their
+   * identity has to be stable — depending on `state` directly would give every
+   * one of them a new identity on every dispatch, and defeat every `React.memo`
+   * below this hook.
+   */
+  const liveRef = useRef({ state, aiTurn });
+  liveRef.current = { state, aiTurn };
+
   /* ---------------------------------------------------------------------- */
   /* Actions                                                                 */
   /* ---------------------------------------------------------------------- */
 
   const roll = useCallback(() => {
-    if (!canRoll(state) || aiTurn) return;
+    const live = liveRef.current;
+    if (!canRoll(live.state) || live.aiTurn) return;
     tap(Haptics.ImpactFeedbackStyle.Heavy);
     dispatch({ type: 'ROLL' });
-  }, [state, aiTurn]);
+  }, []);
 
-  const toggleHold = useCallback(
-    (dieId: number) => {
-      if (aiTurn) return;
-      tap(Haptics.ImpactFeedbackStyle.Light);
-      dispatch({ type: 'TOGGLE_HOLD', dieId });
-    },
-    [aiTurn],
-  );
+  const toggleHold = useCallback((dieId: number) => {
+    if (liveRef.current.aiTurn) return;
+    tap(Haptics.ImpactFeedbackStyle.Light);
+    dispatch({ type: 'TOGGLE_HOLD', dieId });
+  }, []);
 
-  const score = useCallback(
-    (category: Category) => {
-      if (!canScore(state, category) || aiTurn) return;
-      const points = scoreFor(category, diceValues(state.dice));
-      notify(
-        points > 0
-          ? Haptics.NotificationFeedbackType.Success
-          : Haptics.NotificationFeedbackType.Warning,
-      );
-      dispatch({ type: 'SCORE', category });
-    },
-    [state, aiTurn],
-  );
+  const score = useCallback((category: Category) => {
+    const live = liveRef.current;
+    if (!canScore(live.state, category) || live.aiTurn) return;
+    const points = scoreFor(category, diceValues(live.state.dice));
+    notify(
+      points > 0
+        ? Haptics.NotificationFeedbackType.Success
+        : Haptics.NotificationFeedbackType.Warning,
+    );
+    dispatch({ type: 'SCORE', category });
+  }, []);
 
   const beginTurn = useCallback(() => {
     tap(Haptics.ImpactFeedbackStyle.Medium);

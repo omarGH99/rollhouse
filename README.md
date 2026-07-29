@@ -13,6 +13,9 @@ pass-and-play on one device, or against a bot.
 
 ## Play it
 
+One image with both codes, ready to send on:
+**[docs/qr-share.png](docs/qr-share.png)**
+
 ### iPhone
 
 Install **[Expo Go](https://apps.apple.com/app/expo-go/id982107779)** from the

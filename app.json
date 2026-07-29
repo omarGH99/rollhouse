@@ -12,13 +12,15 @@
       "backgroundColor": "#1A0A0D"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.omargh99.qomaramazn"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1A0A0D"
-      }
+      },
+      "package": "com.omargh99.qomaramazn"
     },
     "plugins": [
       "expo-asset",
@@ -31,6 +33,9 @@
     },
     "assetBundlePatterns": [
       "**/*"
-    ]
+    ],
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    }
   }
 }

@@ -1,0 +1,25 @@
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native build output (the managed workflow regenerates these)
+/ios
+/android
+
+# Tooling caches
+coverage/
+.eslintcache
+*.tsbuildinfo
+
+# Local env / secrets
+.env
+.env.local
+.env*.local
+
+# OS noise
+.DS_Store
+Thumbs.db

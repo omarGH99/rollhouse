@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Qomara Mazn",
+    "slug": "qomara-mazn",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#1A0A0D",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1A0A0D"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1A0A0D"
+      }
+    },
+    "plugins": [
+      "expo-asset",
+      "expo-font"
+    ],
+    "icon": "./assets/icon.png",
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ]
+  }
+}

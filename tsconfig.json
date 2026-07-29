@@ -1,0 +1,13 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "baseUrl": ".",
+    // Resolves at build time too — Expo's Metro config honours tsconfig paths
+    // from SDK 50 on. Existing code uses relative imports; either style works.
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx"]
+}

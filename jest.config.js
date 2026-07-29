@@ -21,10 +21,6 @@ module.exports = {
       roots: ['<rootDir>/src/components', '<rootDir>/src/hooks'],
       testMatch: ['**/*.test.tsx'],
       setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
-      // React Native and friends ship untranspiled; everything else stays raw.
-      transformIgnorePatterns: [
-        'node_modules/(?!((jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg))',
-      ],
     },
   ],
 };

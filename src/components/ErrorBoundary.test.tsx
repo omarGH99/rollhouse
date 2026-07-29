@@ -9,12 +9,13 @@ jest.mock('../storage', () => ({
   clearGame: jest.fn(() => Promise.resolve()),
 }));
 
-/** Throws on first render, then behaves, so recovery can be observed. */
-const Flaky: React.FC<{ failures: { count: number } }> = ({ failures }) => {
-  if (failures.count > 0) {
-    failures.count -= 1;
-    throw new Error('BOOM');
-  }
+/**
+ * Throws while the flag is set. A caller-controlled flag rather than a
+ * decrementing counter: React re-invokes a failing render in development to
+ * improve the stack trace, which silently eats a one-shot failure.
+ */
+const Flaky: React.FC<{ fault: { throwing: boolean } }> = ({ fault }) => {
+  if (fault.throwing) throw new Error('BOOM');
   return <Text>recovered</Text>;
 };
 
@@ -41,7 +42,7 @@ describe('ErrorBoundary', () => {
   it('shows recovery UI instead of a blank screen when a child throws', () => {
     render(
       <ErrorBoundary>
-        <Flaky failures={{ count: 99 }} />
+        <Flaky fault={{ throwing: true }} />
       </ErrorBoundary>,
     );
     expect(screen.getByText('Something went wrong')).toBeTruthy();
@@ -52,20 +53,25 @@ describe('ErrorBoundary', () => {
   it('surfaces the underlying message', () => {
     render(
       <ErrorBoundary>
-        <Flaky failures={{ count: 99 }} />
+        <Flaky fault={{ throwing: true }} />
       </ErrorBoundary>,
     );
     expect(screen.getByText('BOOM')).toBeTruthy();
   });
 
   it('remounts the subtree on retry without touching the save', () => {
-    const failures = { count: 1 };
+    const fault = { throwing: true };
     render(
       <ErrorBoundary>
-        <Flaky failures={failures} />
+        <Flaky fault={fault} />
       </ErrorBoundary>,
     );
+    expect(screen.getByText('Something went wrong')).toBeTruthy();
+
+    // Whatever caused the fault is resolved before the player retries.
+    fault.throwing = false;
     fireEvent.press(screen.getByText('TRY AGAIN'));
+
     expect(screen.getByText('recovered')).toBeTruthy();
     expect(clearGame).not.toHaveBeenCalled();
   });
@@ -73,12 +79,13 @@ describe('ErrorBoundary', () => {
   it('discards the saved game when starting fresh', () => {
     // Critical: a save that crashes the board would otherwise trap the player
     // in a relaunch loop into the same crash.
-    const failures = { count: 1 };
+    const fault = { throwing: true };
     render(
       <ErrorBoundary>
-        <Flaky failures={failures} />
+        <Flaky fault={fault} />
       </ErrorBoundary>,
     );
+    fault.throwing = false;
     fireEvent.press(screen.getByText('START A FRESH GAME'));
     expect(clearGame).toHaveBeenCalledTimes(1);
     expect(screen.getByText('recovered')).toBeTruthy();

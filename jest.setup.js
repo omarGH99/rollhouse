@@ -7,9 +7,60 @@
  * silently wrong pass.
  */
 
-// Reanimated ships an official mock; it makes animated styles resolve to their
-// initial values synchronously.
-require('react-native-reanimated').setUpTests();
+/**
+ * Reanimated, mocked by hand.
+ *
+ * Reanimated 4 delegates worklets to react-native-worklets, whose `.native`
+ * entry points throw under Jest because there is no native runtime. Its own
+ * `/mock` entry still imports that chain, and the resolver shim it ships
+ * breaks React Native's component mocks. Mocking the surface this app actually
+ * uses sidesteps all of it, and keeps animated styles resolving to their
+ * settled values so layout assertions stay meaningful.
+ */
+jest.mock('react-native-reanimated', () => {
+  const { View, Text } = require('react-native');
+
+  // Animation helpers collapse to their destination value.
+  const toValue = (value) => value;
+  const identityFirst = (first) => first;
+
+  const easingFn = () => 0;
+  const easingFactory = () => easingFn;
+  const Easing = new Proxy(
+    {},
+    { get: () => Object.assign(easingFactory, { factory: easingFactory }) },
+  );
+
+  return {
+    __esModule: true,
+    default: {
+      View,
+      Text,
+      createAnimatedComponent: (Component) => Component,
+    },
+    useSharedValue: (initial) => ({ value: initial }),
+    // Styles are read once, at their initial values.
+    useAnimatedStyle: (factory) => factory(),
+    useAnimatedRef: () => ({ current: null }),
+    useDerivedValue: (factory) => ({ value: factory() }),
+    withTiming: toValue,
+    withSpring: toValue,
+    withDelay: (_delay, value) => value,
+    withSequence: identityFirst,
+    withRepeat: identityFirst,
+    cancelAnimation: () => {},
+    runOnJS: (fn) => fn,
+    runOnUI: (fn) => fn,
+    interpolate: (value, input = [0, 1], output = [0, 1]) => {
+      const lo = input[0];
+      const hi = input[input.length - 1];
+      const t = hi === lo ? 0 : (value - lo) / (hi - lo);
+      return output[0] + t * (output[output.length - 1] - output[0]);
+    },
+    interpolateColor: (_value, _input, output) => output[0],
+    Easing,
+  };
+});
 
 // Icon sets reach into expo-font's loaded-font registry, which does not exist
 // under the test renderer. The stub keeps the icon name queryable so tests can

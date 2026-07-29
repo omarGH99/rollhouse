@@ -36,6 +36,15 @@
     ],
     "runtimeVersion": {
       "policy": "sdkVersion"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "6deb76d5-27dd-4933-95ef-7845f01e023f"
+      }
+    },
+    "owner": "omar_safar",
+    "updates": {
+      "url": "https://u.expo.dev/6deb76d5-27dd-4933-95ef-7845f01e023f"
     }
   }
 }

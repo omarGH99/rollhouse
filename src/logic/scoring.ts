@@ -21,7 +21,7 @@ export const LOWER_CATEGORIES: LowerCategory[] = [
   'fullHouse',
   'smallStraight',
   'largeStraight',
-  'yahtzee',
+  'rollhouse',
   'chance',
 ];
 
@@ -39,9 +39,7 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   fullHouse: 'Full House',
   smallStraight: 'Small Straight',
   largeStraight: 'Large Straight',
-  // The category key stays `yahtzee` so saved games keep loading; only the
-  // player-facing name changes.
-  yahtzee: 'QOMAR',
+  rollhouse: 'Rollhouse',
   chance: 'Chance',
 };
 
@@ -58,19 +56,25 @@ export const CATEGORY_HINTS: Record<Category, string> = {
   fullHouse: '25 pts',
   smallStraight: '30 pts',
   largeStraight: '40 pts',
-  yahtzee: '50 pts',
+  rollhouse: '50 pts',
   chance: 'Sum of all dice',
 };
 
 export const UPPER_BONUS_THRESHOLD = 63;
 export const UPPER_BONUS_POINTS = 35;
+export const ROLLHOUSE_POINTS = 50;
+/** Paid for each further Rollhouse once the box holds its 50. */
+export const EXTRA_ROLLHOUSE_BONUS = 100;
 export const TOTAL_ROUNDS = ALL_CATEGORIES.length; // 13
 
 export const createEmptyScoreSheet = (): ScoreSheet =>
-  ALL_CATEGORIES.reduce((sheet, category) => {
-    sheet[category] = null;
-    return sheet;
-  }, {} as ScoreSheet);
+  ALL_CATEGORIES.reduce(
+    (sheet, category) => {
+      sheet[category] = null;
+      return sheet;
+    },
+    { extraRollhouses: 0 } as ScoreSheet,
+  );
 
 /* -------------------------------------------------------------------------- */
 /* Primitives                                                                  */
@@ -114,13 +118,10 @@ export const calculateThreeOfAKind = (dice: DieValue[]): number =>
 export const calculateFourOfAKind = (dice: DieValue[]): number =>
   calculateNOfAKind(dice, 4);
 
+/** Three of one face and two of another. Five alike is not a full house. */
 export const calculateFullHouse = (dice: DieValue[]): number => {
   const counts = tallyFaces(dice).filter((c) => c > 0);
-  const isFullHouse =
-    (counts.length === 2 && counts.includes(3) && counts.includes(2)) ||
-    // Five of a kind also satisfies a full house under standard rules.
-    counts.includes(5);
-  return isFullHouse ? 25 : 0;
+  return counts.length === 2 && counts.includes(3) ? 25 : 0;
 };
 
 export const calculateSmallStraight = (dice: DieValue[]): number =>
@@ -129,8 +130,12 @@ export const calculateSmallStraight = (dice: DieValue[]): number =>
 export const calculateLargeStraight = (dice: DieValue[]): number =>
   hasRunOfLength(dice, 5) ? 40 : 0;
 
-export const calculateYahtzee = (dice: DieValue[]): number =>
-  tallyFaces(dice).some((count) => count === 5) ? 50 : 0;
+/** All five dice showing the same face. */
+export const isFiveAlike = (dice: DieValue[]): boolean =>
+  tallyFaces(dice).some((count) => count === 5);
+
+export const calculateRollhouse = (dice: DieValue[]): number =>
+  isFiveAlike(dice) ? ROLLHOUSE_POINTS : 0;
 
 export const calculateChance = (dice: DieValue[]): number => sumAll(dice);
 
@@ -143,8 +148,57 @@ const UPPER_FACE: Record<UpperCategory, DieValue> = {
   sixes: 6,
 };
 
-/** Points `dice` would earn in `category`. */
-export const scoreFor = (category: Category, dice: DieValue[]): number => {
+const UPPER_BOX: Record<DieValue, UpperCategory> = {
+  1: 'ones',
+  2: 'twos',
+  3: 'threes',
+  4: 'fours',
+  5: 'fives',
+  6: 'sixes',
+};
+
+/**
+ * A Rollhouse rolled when its box is already filled (with 50 or with a zero)
+ * is a Joker: it may stand in for a full house or either straight, but where
+ * it can be scored is restricted — see `legalCategories`.
+ */
+export const isJoker = (sheet: ScoreSheet, dice: DieValue[]): boolean =>
+  sheet.rollhouse !== null && isFiveAlike(dice);
+
+/** A further Rollhouse only pays its bonus if the box was scored, not zeroed. */
+export const earnsExtraRollhouse = (sheet: ScoreSheet, dice: DieValue[]): boolean =>
+  sheet.rollhouse === ROLLHOUSE_POINTS && isFiveAlike(dice);
+
+/**
+ * Boxes these dice may be scored in. Normally every open box. A Joker is
+ * forced: the upper box matching its face if that is open; failing that any
+ * open lower box; failing that an open upper box, where it scores nothing.
+ */
+export const legalCategories = (sheet: ScoreSheet, dice: DieValue[]): Category[] => {
+  const open = ALL_CATEGORIES.filter((c) => sheet[c] === null);
+  if (!isJoker(sheet, dice)) return open;
+
+  const matching = UPPER_BOX[dice[0]];
+  if (sheet[matching] === null) return [matching];
+
+  const lower = open.filter((c) => !(c in UPPER_FACE));
+  return lower.length > 0 ? lower : open;
+};
+
+/**
+ * Points `dice` would earn in `category`. With `joker` set, the fixed-value
+ * lower boxes pay in full even though five alike is none of those hands.
+ */
+export const scoreFor = (
+  category: Category,
+  dice: DieValue[],
+  joker = false,
+): number => {
+  if (joker) {
+    if (category === 'fullHouse') return 25;
+    if (category === 'smallStraight') return 30;
+    if (category === 'largeStraight') return 40;
+  }
   switch (category) {
     case 'ones':
     case 'twos':
@@ -163,21 +217,22 @@ export const scoreFor = (category: Category, dice: DieValue[]): number => {
       return calculateSmallStraight(dice);
     case 'largeStraight':
       return calculateLargeStraight(dice);
-    case 'yahtzee':
-      return calculateYahtzee(dice);
+    case 'rollhouse':
+      return calculateRollhouse(dice);
     case 'chance':
       return calculateChance(dice);
   }
 };
 
-/** Preview score for every still-open category. */
+/** Preview score for every box these dice may be scored in. */
 export const previewScores = (
   sheet: ScoreSheet,
   dice: DieValue[],
 ): Partial<Record<Category, number>> => {
   const preview: Partial<Record<Category, number>> = {};
-  for (const category of ALL_CATEGORIES) {
-    if (sheet[category] === null) preview[category] = scoreFor(category, dice);
+  const joker = isJoker(sheet, dice);
+  for (const category of legalCategories(sheet, dice)) {
+    preview[category] = scoreFor(category, dice, joker);
   }
   return preview;
 };
@@ -201,8 +256,11 @@ export const upperTotal = (sheet: ScoreSheet): number =>
 export const lowerTotal = (sheet: ScoreSheet): number =>
   sumSection(sheet, LOWER_CATEGORIES);
 
+export const rollhouseBonus = (sheet: ScoreSheet): number =>
+  sheet.extraRollhouses * EXTRA_ROLLHOUSE_BONUS;
+
 export const grandTotal = (sheet: ScoreSheet): number =>
-  upperTotal(sheet) + lowerTotal(sheet);
+  upperTotal(sheet) + lowerTotal(sheet) + rollhouseBonus(sheet);
 
 export const isSheetComplete = (sheet: ScoreSheet): boolean =>
   ALL_CATEGORIES.every((c) => sheet[c] !== null);

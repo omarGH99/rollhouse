@@ -1,5 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import Animated, {
@@ -12,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ActionButton } from './ActionButton';
 import { FeltPanel } from './FeltPanel';
+import { MAX_NAME_LENGTH } from '../logic/persistence';
 import { accents, fonts, palette, radius, spacing } from '../theme';
 import { MAX_PLAYERS, MIN_PLAYERS, Player, PlayerKind } from '../types';
 
@@ -83,6 +91,19 @@ export const SetupScreen: React.FC<Props> = ({
     );
   };
 
+  const setName = (seat: number, name: string) => {
+    setPlayers((current) =>
+      current.map((player, i) => (i === seat ? { ...player, name } : player)),
+    );
+  };
+
+  /** Names as they will be played: trimmed, and never blank. */
+  const seated = (): Player[] =>
+    players.map((player, seat) => ({
+      kind: player.kind,
+      name: player.name.trim() || defaultName(seat, player.kind),
+    }));
+
   const humanCount = players.filter((p) => p.kind === 'human').length;
 
   return (
@@ -107,6 +128,8 @@ export const SetupScreen: React.FC<Props> = ({
         </View>
 
         <ScrollView
+          // Without this the first tap on DEAL only dismisses the keyboard.
+          keyboardShouldPersistTaps="handled"
           contentContainerStyle={[
             styles.scroll,
             { paddingBottom: insets.bottom + spacing(8) },
@@ -156,9 +179,26 @@ export const SetupScreen: React.FC<Props> = ({
               elevation={0}
             >
               <View style={[styles.seatDot, { backgroundColor: accents[seat].main }]} />
-              <Text style={styles.seatName} numberOfLines={1}>
-                {player.name}
-              </Text>
+              {/*
+                Wrapped because on web a bare input is not a positioned element,
+                so the panel's absolutely-filled blur and tint paint over it.
+              */}
+              <View style={styles.seatNameWrap}>
+                <TextInput
+                  accessibilityLabel={`Seat ${seat + 1} name`}
+                  value={player.name}
+                  onChangeText={(name) => setName(seat, name)}
+                  placeholder={defaultName(seat, player.kind)}
+                  placeholderTextColor={palette.textFaint}
+                  selectionColor={accents[seat].main}
+                  maxLength={MAX_NAME_LENGTH}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                  returnKeyType="done"
+                  selectTextOnFocus
+                  style={styles.seatName}
+                />
+              </View>
               <View style={styles.kindToggle}>
                 {(['human', 'ai'] as PlayerKind[]).map((kind) => {
                   const active = player.kind === kind;
@@ -193,14 +233,14 @@ export const SetupScreen: React.FC<Props> = ({
             {humanCount === 0
               ? 'All seats are bots — they will play the game out on their own.'
               : humanCount === 1
-                ? 'One human seat: no privacy curtain between turns.'
-                : 'The board is hidden between turns so nobody can peek.'}
+                ? 'After the bots have played, you tap in to start your turn.'
+                : 'Each turn ends with a pause, so the device can change hands.'}
           </Text>
 
           <ActionButton
             label="DEAL"
             accent={accents[0]}
-            onPress={() => onStart(players)}
+            onPress={() => onStart(seated())}
             size="lg"
             pulse
             style={styles.cta}
@@ -292,12 +332,16 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
   },
-  seatName: {
+  seatNameWrap: {
     flex: 1,
+  },
+  seatName: {
     fontFamily: fonts.body,
     fontSize: 14,
     fontWeight: '600',
     color: palette.text,
+    // Android pads text inputs by default, which would make the row taller.
+    paddingVertical: 0,
   },
   kindToggle: {
     flexDirection: 'row',

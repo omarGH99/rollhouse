@@ -14,13 +14,19 @@ export type LowerCategory =
   | 'fullHouse'
   | 'smallStraight'
   | 'largeStraight'
-  | 'yahtzee'
+  | 'rollhouse'
   | 'chance';
 
 export type Category = UpperCategory | LowerCategory;
 
 /** `null` means the category is still open. */
-export type ScoreSheet = Record<Category, number | null>;
+export type ScoreSheet = Record<Category, number | null> & {
+  /**
+   * Rollhouses rolled after the Rollhouse box was already scored for 50. Each
+   * is worth a bonus on top of whatever box that turn went in.
+   */
+  extraRollhouses: number;
+};
 
 /** Seat index, `0 .. players.length - 1`. */
 export type PlayerIndex = number;
@@ -42,6 +48,15 @@ export type Phase =
   | 'handoff'
   | 'gameover';
 
+export interface LastScored {
+  player: PlayerIndex;
+  category: Category;
+  /** Points written in the box. */
+  points: number;
+  /** Extra-Rollhouse bonus earned by the same roll, or 0. */
+  bonus: number;
+}
+
 export interface GameState {
   /** Seats, in turn order. Length is 2-4 and fixed for the game. */
   players: Player[];
@@ -60,5 +75,5 @@ export interface GameState {
   /** Bumped on every roll so dice can re-run their animation. */
   rollNonce: number;
   /** Most recently locked-in category, for the score-flash animation. */
-  lastScored: { player: PlayerIndex; category: Category; points: number } | null;
+  lastScored: LastScored | null;
 }

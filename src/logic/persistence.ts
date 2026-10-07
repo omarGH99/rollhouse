@@ -5,6 +5,7 @@ import {
   MAX_PLAYERS,
   MIN_PLAYERS,
   Phase,
+  Player,
   PlayerKind,
   ScoreSheet,
 } from '../types';
@@ -16,7 +17,10 @@ import { ALL_CATEGORIES, TOTAL_ROUNDS } from './scoring';
  * match is discarded rather than guessed at — losing one game in progress is a
  * far better failure than restoring a corrupt board.
  */
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
+
+/** Versioned apart from games: who sat where outlives any change to the board. */
+export const SEATS_VERSION = 1;
 
 export interface SavedGame {
   version: number;
@@ -43,6 +47,8 @@ const isPlayerKind = (v: unknown): v is PlayerKind => v === 'human' || v === 'ai
 const isScoreSheet = (v: unknown): v is ScoreSheet => {
   if (typeof v !== 'object' || v === null) return false;
   const sheet = v as Record<string, unknown>;
+  const extra = sheet.extraRollhouses;
+  if (typeof extra !== 'number' || !Number.isInteger(extra) || extra < 0) return false;
   return ALL_CATEGORIES.every((category: Category) => {
     const cell = sheet[category];
     return cell === null || (typeof cell === 'number' && Number.isFinite(cell));
@@ -62,17 +68,7 @@ const isGameState = (v: unknown): v is GameState => {
   const players = s.players;
   if (!Array.isArray(players)) return false;
   if (players.length < MIN_PLAYERS || players.length > MAX_PLAYERS) return false;
-  if (
-    !players.every(
-      (p: unknown) =>
-        typeof p === 'object' &&
-        p !== null &&
-        typeof (p as { name?: unknown }).name === 'string' &&
-        isPlayerKind((p as { kind?: unknown }).kind),
-    )
-  ) {
-    return false;
-  }
+  if (!players.every(isPlayer)) return false;
 
   if (!Array.isArray(s.scores) || s.scores.length !== players.length) return false;
   if (!s.scores.every(isScoreSheet)) return false;
@@ -110,14 +106,51 @@ const isGameState = (v: unknown): v is GameState => {
     if (!seatInRange(last.player)) return false;
     if (!ALL_CATEGORIES.includes(last.category as Category)) return false;
     if (typeof last.points !== 'number') return false;
+    if (typeof last.bonus !== 'number') return false;
   }
 
   return true;
 };
 
+/** What v1 saves called the five-alike box. Named here and nowhere else. */
+const LEGACY_BOX = 'yahtzee';
+
+/**
+ * Bring a v1 state up to the current shape: the five-alike box was renamed,
+ * and sheets gained a bonus count that v1 rules never awarded. Anything
+ * unexpected is passed through untouched for `isGameState` to reject.
+ */
+const upgradeV1 = (raw: unknown): unknown => {
+  if (typeof raw !== 'object' || raw === null) return raw;
+  const state = raw as Record<string, unknown>;
+
+  const scores = Array.isArray(state.scores)
+    ? state.scores.map((sheet: unknown) => {
+        if (typeof sheet !== 'object' || sheet === null) return sheet;
+        const { [LEGACY_BOX]: rollhouse, ...rest } = sheet as Record<string, unknown>;
+        return { ...rest, rollhouse, extraRollhouses: 0 };
+      })
+    : state.scores;
+
+  const last = state.lastScored;
+  const lastScored =
+    typeof last === 'object' && last !== null
+      ? {
+          ...last,
+          category:
+            (last as { category?: unknown }).category === LEGACY_BOX
+              ? 'rollhouse'
+              : (last as { category?: unknown }).category,
+          bonus: 0,
+        }
+      : last;
+
+  return { ...state, scores, lastScored };
+};
+
 /**
  * Parse a persisted game. Returns `null` for anything unusable — absent,
- * malformed, wrong version, or already finished (a completed game is not worth
+ * malformed, unknown version, or already finished (a completed game is not worth
  * restoring into).
  */
 export const deserializeSession = (raw: string | null): GameSession | null => {
@@ -132,10 +165,43 @@ export const deserializeSession = (raw: string | null): GameSession | null => {
 
   if (typeof parsed !== 'object' || parsed === null) return null;
   const save = parsed as Record<string, unknown>;
-  if (save.version !== SAVE_VERSION) return null;
-  if (!isGameState(save.state)) return null;
-  if (save.state.phase === 'gameover') return null;
+  const state = save.version === 1 ? upgradeV1(save.state) : save.state;
+  if (save.version !== 1 && save.version !== SAVE_VERSION) return null;
+  if (!isGameState(state)) return null;
+  if (state.phase === 'gameover') return null;
 
   // History is not persisted, so a restored game starts with nothing to undo.
-  return { state: save.state, history: [] };
+  return { state, history: [] };
+};
+
+/** Longest seat name the setup screen accepts; longer ones crowd the banner. */
+export const MAX_NAME_LENGTH = 12;
+
+const isPlayer = (p: unknown): p is Player =>
+  typeof p === 'object' &&
+  p !== null &&
+  typeof (p as { name?: unknown }).name === 'string' &&
+  isPlayerKind((p as { kind?: unknown }).kind);
+
+/** The seats of the last game started, so the next one opens with them. */
+export const serializePlayers = (players: Player[]): string =>
+  JSON.stringify({ version: SEATS_VERSION, players });
+
+export const deserializePlayers = (raw: string | null): Player[] | null => {
+  if (!raw) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+
+  if (typeof parsed !== 'object' || parsed === null) return null;
+  const { version, players } = parsed as Record<string, unknown>;
+  if (version !== SEATS_VERSION || !Array.isArray(players)) return null;
+  if (players.length < MIN_PLAYERS || players.length > MAX_PLAYERS) return null;
+  if (!players.every(isPlayer)) return null;
+
+  return players.map(({ name, kind }) => ({ name, kind }));
 };

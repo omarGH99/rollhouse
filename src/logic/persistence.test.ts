@@ -1,6 +1,9 @@
 import {
   SAVE_VERSION,
+  SEATS_VERSION,
+  deserializePlayers,
   deserializeSession,
+  serializePlayers,
   serializeSession,
 } from './persistence';
 import {
@@ -150,5 +153,80 @@ describe('resuming a restored game', () => {
     });
     expect(next.phase).toBe('handoff');
     expect(next.scores[0].chance).not.toBeNull();
+  });
+});
+
+describe('saves from before the rename', () => {
+  const LEGACY_BOX = 'yahtzee';
+
+  /** A current save rewritten into the v1 shape. */
+  const asV1 = (session: ReturnType<typeof createSession>): string => {
+    const parsed = JSON.parse(serializeSession(session));
+    parsed.version = 1;
+    parsed.state.scores.forEach((sheet: Record<string, unknown>) => {
+      sheet[LEGACY_BOX] = sheet.rollhouse;
+      delete sheet.rollhouse;
+      delete sheet.extraRollhouses;
+    });
+    const last = parsed.state.lastScored;
+    if (last) {
+      delete last.bonus;
+      if (last.category === 'rollhouse') last.category = LEGACY_BOX;
+    }
+    return JSON.stringify(parsed);
+  };
+
+  it('resumes a v1 game, keeping a scored five-alike box', () => {
+    let session = createSession();
+    session = sessionReducer(session, { type: 'ROLL' });
+    session = {
+      ...session,
+      state: {
+        ...session.state,
+        dice: session.state.dice.map((die) => ({ ...die, value: 3 as const })),
+      },
+    };
+    session = sessionReducer(session, { type: 'SCORE', category: 'rollhouse' });
+
+    const restored = deserializeSession(asV1(session));
+    expect(restored).not.toBeNull();
+    expect(restored!.state).toEqual(session.state);
+    expect(restored!.state.scores[0].rollhouse).toBe(50);
+    expect(restored!.state.scores[0].extraRollhouses).toBe(0);
+    expect(restored!.state.lastScored?.category).toBe('rollhouse');
+  });
+
+  it('still rejects a v1 save that is otherwise broken', () => {
+    const parsed = JSON.parse(asV1(createSession()));
+    parsed.state.scores = 'nope';
+    expect(deserializeSession(JSON.stringify(parsed))).toBeNull();
+  });
+});
+
+describe('remembered seats', () => {
+  const seats = [
+    { name: 'Omar', kind: 'human' as const },
+    { name: 'Bot 2', kind: 'ai' as const },
+  ];
+
+  it('round-trips names and kinds', () => {
+    expect(deserializePlayers(serializePlayers(seats))).toEqual(seats);
+  });
+
+  it('returns null for anything unusable', () => {
+    expect(deserializePlayers(null)).toBeNull();
+    expect(deserializePlayers('{ broken')).toBeNull();
+    expect(deserializePlayers(JSON.stringify({ version: SEATS_VERSION }))).toBeNull();
+    expect(
+      deserializePlayers(JSON.stringify({ version: SEATS_VERSION + 1, players: seats })),
+    ).toBeNull();
+  });
+
+  it('rejects a bad seat or an impossible table size', () => {
+    const wrap = (players: unknown) =>
+      JSON.stringify({ version: SEATS_VERSION, players });
+    expect(deserializePlayers(wrap([seats[0]]))).toBeNull();
+    expect(deserializePlayers(wrap([seats[0], { name: 7, kind: 'human' }]))).toBeNull();
+    expect(deserializePlayers(wrap([seats[0], { name: 'X', kind: 'cat' }]))).toBeNull();
   });
 });

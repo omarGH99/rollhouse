@@ -1,7 +1,7 @@
 import { GameState, ScoreSheet } from '../types';
-import { grandTotal, upperBonus } from './scoring';
+import { ROLLHOUSE_POINTS, grandTotal, upperBonus } from './scoring';
 
-export const STATS_VERSION = 1;
+export const STATS_VERSION = 2;
 
 export interface Stats {
   version: number;
@@ -13,7 +13,7 @@ export interface Stats {
   /** Sum of every human final score, for the running average. */
   totalScore: number;
   scoredGames: number;
-  yahtzees: number;
+  rollhouses: number;
   upperBonuses: number;
   /** Achievement ids already earned. */
   unlocked: string[];
@@ -27,7 +27,7 @@ export const emptyStats = (): Stats => ({
   bestScore: 0,
   totalScore: 0,
   scoredGames: 0,
-  yahtzees: 0,
+  rollhouses: 0,
   upperBonuses: 0,
   unlocked: [],
 });
@@ -60,11 +60,11 @@ export const ACHIEVEMENTS: Achievement[] = [
     earned: (s) => s.humanWins >= 1,
   },
   {
-    id: 'yahtzee',
-    title: 'Five Alike',
-    description: 'Score a Qomar',
+    id: 'rollhouse',
+    title: 'Perfect Hand',
+    description: 'Score a Rollhouse',
     icon: 'flame-outline',
-    earned: (s) => s.yahtzees >= 1,
+    earned: (s) => s.rollhouses >= 1,
   },
   {
     id: 'bonus',
@@ -142,9 +142,11 @@ export const recordGame = (stats: Stats, state: GameState): RecordResult => {
   const humanTotals = humanSeats.map((seat) => totals[seat]);
   const bestHuman = humanTotals.length ? Math.max(...humanTotals) : null;
 
-  const yahtzees = state.scores.reduce(
+  const rollhouses = state.scores.reduce(
     (n, sheet, seat) =>
-      humanSeats.includes(seat) && sheet.yahtzee === 50 ? n + 1 : n,
+      humanSeats.includes(seat)
+        ? n + (sheet.rollhouse === ROLLHOUSE_POINTS ? 1 : 0) + sheet.extraRollhouses
+        : n,
     0,
   );
   const bonuses = state.scores.reduce(
@@ -161,7 +163,7 @@ export const recordGame = (stats: Stats, state: GameState): RecordResult => {
     bestScore: Math.max(stats.bestScore, bestHuman ?? 0),
     totalScore: stats.totalScore + (bestHuman ?? 0),
     scoredGames: stats.scoredGames + (bestHuman === null ? 0 : 1),
-    yahtzees: stats.yahtzees + yahtzees,
+    rollhouses: stats.rollhouses + rollhouses,
     upperBonuses: stats.upperBonuses + bonuses,
   };
 
@@ -183,17 +185,70 @@ export const recordGame = (stats: Stats, state: GameState): RecordResult => {
 
 export const serializeStats = (stats: Stats): string => JSON.stringify(stats);
 
-/** Missing or malformed stats degrade to empty rather than throwing. */
+type RawStats = Record<string, unknown>;
+
+const LEGACY_ACHIEVEMENT = 'yahtzee';
+const LEGACY_COUNTER = `${LEGACY_ACHIEVEMENT}s`;
+
+/**
+ * Upgrade steps, keyed by the version they upgrade *from*. Bumping
+ * `STATS_VERSION` means adding the step here: unlike a game in progress, a
+ * lifetime record is not something to throw away over a schema change.
+ */
+const MIGRATIONS: Record<number, (stats: RawStats) => RawStats> = {
+  // v1 predates the game's own name for five alike, in a counter and in an
+  // achievement id. The old spellings appear here and nowhere else.
+  1: ({ [LEGACY_COUNTER]: rollhouses, ...rest }) => ({
+    ...rest,
+    rollhouses,
+    unlocked: Array.isArray(rest.unlocked)
+      ? rest.unlocked.map((id) => (id === LEGACY_ACHIEVEMENT ? 'rollhouse' : id))
+      : rest.unlocked,
+  }),
+};
+
+const COUNTERS = [
+  'gamesPlayed',
+  'humanWins',
+  'aiWins',
+  'bestScore',
+  'totalScore',
+  'scoredGames',
+  'rollhouses',
+  'upperBonuses',
+] as const;
+
+/**
+ * Missing or malformed stats degrade to empty rather than throwing. Stats from
+ * an older build are migrated forward; only a version this build has never
+ * heard of (written by a newer one) is discarded.
+ */
 export const deserializeStats = (raw: string | null): Stats => {
   if (!raw) return emptyStats();
   try {
-    const parsed = JSON.parse(raw) as Partial<Stats>;
-    if (parsed?.version !== STATS_VERSION) return emptyStats();
-    return {
-      ...emptyStats(),
-      ...parsed,
-      unlocked: Array.isArray(parsed.unlocked) ? parsed.unlocked : [],
-    };
+    let parsed = JSON.parse(raw) as RawStats | null;
+    if (typeof parsed !== 'object' || parsed === null) return emptyStats();
+
+    let version = parsed.version;
+    if (typeof version !== 'number' || !Number.isInteger(version)) return emptyStats();
+    if (version < 1 || version > STATS_VERSION) return emptyStats();
+    for (; version < STATS_VERSION; version += 1) {
+      parsed = MIGRATIONS[version]?.(parsed) ?? parsed;
+    }
+
+    const stats = emptyStats();
+    for (const key of COUNTERS) {
+      const value = parsed[key];
+      if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+        stats[key] = value;
+      }
+    }
+    if (Array.isArray(parsed.unlocked)) {
+      stats.unlocked = parsed.unlocked.filter(
+        (id): id is string => typeof id === 'string',
+      );
+    }
+    return stats;
   } catch {
     return emptyStats();
   }

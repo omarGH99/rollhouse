@@ -6,8 +6,10 @@ import {
   LOWER_CATEGORIES,
   UPPER_BONUS_THRESHOLD,
   UPPER_CATEGORIES,
+  EXTRA_ROLLHOUSE_BONUS,
   grandTotal,
   lowerTotal,
+  rollhouseBonus,
   upperBonus,
   upperSubtotal,
 } from '../logic/scoring';
@@ -118,7 +120,9 @@ export const Scorecard: React.FC<Props> = ({
         previewNonce={previewNonce}
         available={scores[currentPlayer][category] === null}
         rolled={selectable}
-        selectable={selectable && scores[currentPlayer][category] === null}
+        // A preview exists only for boxes the rules allow these dice into,
+        // which is narrower than "open" when a Joker is in hand.
+        selectable={selectable && previews[category] !== undefined}
         justScored={lastScoredCategory === category}
         onSelect={onSelect}
       />
@@ -182,6 +186,15 @@ export const Scorecard: React.FC<Props> = ({
         values={scores.map(lowerTotal)}
         currentPlayer={currentPlayer}
       />
+      {/* Rare enough that the row only appears once somebody has earned one. */}
+      {scores.some((sheet) => sheet.extraRollhouses > 0) ? (
+        <SummaryRow
+          label="Rollhouse bonus"
+          values={scores.map(rollhouseBonus)}
+          currentPlayer={currentPlayer}
+          note={`+${EXTRA_ROLLHOUSE_BONUS} each`}
+        />
+      ) : null}
 
       <View style={styles.totalDivider} />
       <SummaryRow

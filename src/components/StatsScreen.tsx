@@ -107,7 +107,7 @@ export const StatsScreen: React.FC<Props> = ({
             <Tile label="WIN RATE" value={winRate} />
             <Tile label="BEST" value={stats.bestScore} />
             <Tile label="AVERAGE" value={averageScore(stats)} />
-            <Tile label="QOMARS" value={stats.yahtzees} />
+            <Tile label="ROLLHOUSES" value={stats.rollhouses} />
           </View>
 
           <Text style={styles.sectionTitle}>ACHIEVEMENTS</Text>

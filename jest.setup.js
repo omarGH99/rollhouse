@@ -87,6 +87,15 @@ jest.mock('expo-haptics', () => ({
   NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
 }));
 
+// No accelerometer under test; shaking is covered by the pure detector.
+jest.mock('expo-sensors', () => ({
+  Accelerometer: {
+    isAvailableAsync: jest.fn(() => Promise.resolve(false)),
+    setUpdateInterval: jest.fn(),
+    addListener: jest.fn(() => ({ remove: jest.fn() })),
+  },
+}));
+
 // In-memory AsyncStorage, so persistence paths run without a native module.
 jest.mock('@react-native-async-storage/async-storage', () => {
   let store = {};

@@ -15,6 +15,7 @@ import { FeltPanel } from './FeltPanel';
 import { DICE_COUNT, MAX_ROLLS } from '../logic/gameReducer';
 import {
   CATEGORY_LABELS,
+  EXTRA_ROLLHOUSE_BONUS,
   LOWER_CATEGORIES,
   TOTAL_ROUNDS,
   UPPER_BONUS_POINTS,
@@ -44,7 +45,7 @@ const RULE_TEXT: Record<Category, string> = {
   fullHouse: 'Three of one number and two of another',
   smallStraight: 'Four in a row, e.g. 2-3-4-5',
   largeStraight: 'All five in a row, e.g. 2-3-4-5-6',
-  yahtzee: 'All five dice showing the same number',
+  rollhouse: 'All five dice showing the same number',
   chance: 'Anything goes — score the sum of all five',
 };
 
@@ -53,7 +54,7 @@ const FIXED_POINTS: Partial<Record<Category, number>> = {
   fullHouse: 25,
   smallStraight: 30,
   largeStraight: 40,
-  yahtzee: 50,
+  rollhouse: 50,
 };
 
 /**
@@ -159,25 +160,26 @@ export const RulesScreen: React.FC<Props> = ({ visible, onClose }) => {
           showsVerticalScrollIndicator={false}
         >
           <Text style={styles.intro}>
-            Two players share one device. Over {TOTAL_ROUNDS} rounds you each fill
-            every box on the scorecard — highest total wins.
+            Two to four players, people or bots, share one device. Over{' '}
+            {TOTAL_ROUNDS} rounds you each fill every box on the scorecard —
+            highest total wins.
           </Text>
 
           <Section title="YOUR TURN">
             <Step n={1}>
-              Roll all {DICE_COUNT} dice. You get {MAX_ROLLS} rolls per turn.
+              Your turn opens on the dice. Shake your phone or tap throw to roll
+              all {DICE_COUNT}. You get {MAX_ROLLS} throws per turn.
             </Step>
             <Step n={2}>
               Tap any dice you want to keep — they sit out the next roll. Tap again
               to release them.
             </Step>
             <Step n={3}>
-              After your last roll, choose a box to score in. Every box can be used
-              only once, so a bad roll may mean taking a zero somewhere.
+              When you are happy, or out of throws, go to the scorecard and choose
+              a box to score in. Every box can be used only once, so a bad roll may mean taking a zero somewhere.
             </Step>
             <Step n={4}>
-              Hand the device over. The board stays hidden until the next player
-              taps in.
+              Hand the device over. The next player taps in to start their turn.
             </Step>
           </Section>
 
@@ -209,6 +211,24 @@ export const RulesScreen: React.FC<Props> = ({ visible, onClose }) => {
             </Text>
           </Section>
 
+          <Section title="MORE THAN ONE ROLLHOUSE">
+            <View style={[styles.callout, { borderColor: accent.soft }]}>
+              <Ionicons name="flame-outline" size={18} color={accent.main} />
+              <Text style={styles.calloutText}>
+                Once your Rollhouse box holds its 50, every further Rollhouse
+                earns a {EXTRA_ROLLHOUSE_BONUS}-point bonus. A box you filled
+                with a zero earns no bonus.
+              </Text>
+            </View>
+            <Text style={styles.body}>
+              A Rollhouse rolled after the box is filled is a Joker, and must
+              still be scored somewhere. It goes in the upper box for its number
+              if that is open. If not, pick any open lower box: Full House and
+              both Straights pay in full. If the lower section is full too, it
+              takes a zero in an open upper box.
+            </Text>
+          </Section>
+
           <Section title="GOOD TO KNOW">
             <Text style={styles.body}>
               While you are choosing, each open box previews what your current dice
@@ -216,8 +236,7 @@ export const RulesScreen: React.FC<Props> = ({ visible, onClose }) => {
               nothing.
             </Text>
             <Text style={styles.body}>
-              Five of a kind also satisfies Full House. If you have no good option,
-              taking a zero in a box you are unlikely to fill (often Ones) costs you
+              If you have no good option, taking a zero in a box you are unlikely to fill (often Ones) costs you
               the least.
             </Text>
           </Section>

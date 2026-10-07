@@ -1,4 +1,4 @@
-import { chooseCategory, chooseKeep, isYahtzee } from './ai';
+import { chooseCategory, chooseKeep } from './ai';
 import {
   ALL_CATEGORIES,
   createEmptyScoreSheet,
@@ -35,8 +35,8 @@ describe('chooseCategory', () => {
     expect(() => chooseCategory(d(1, 2, 3, 4, 5), full)).toThrow(/full sheet/);
   });
 
-  it('takes a real Yahtzee when the box is open', () => {
-    expect(chooseCategory(d(4, 4, 4, 4, 4), createEmptyScoreSheet())).toBe('yahtzee');
+  it('takes a real Rollhouse when the box is open', () => {
+    expect(chooseCategory(d(4, 4, 4, 4, 4), createEmptyScoreSheet())).toBe('rollhouse');
   });
 
   it('takes a large straight over the equivalent chance points', () => {
@@ -50,9 +50,9 @@ describe('chooseCategory', () => {
     expect(chooseCategory(d(5, 5, 5, 2, 2), sheet)).toBe('fullHouse');
   });
 
-  it('dumps a forced zero in a cheap box, not on Yahtzee', () => {
+  it('dumps a forced zero in a cheap box, not on Rollhouse', () => {
     // Nothing here scores anywhere except a small upper total.
-    const sheet = onlyOpen('yahtzee', 'ones', 'largeStraight');
+    const sheet = onlyOpen('rollhouse', 'ones', 'largeStraight');
     const pick = chooseCategory(d(2, 3, 3, 4, 6), sheet);
     expect(pick).toBe('ones');
   });
@@ -81,7 +81,7 @@ describe('chooseCategory', () => {
 });
 
 describe('chooseKeep', () => {
-  it('keeps all five of a Yahtzee', () => {
+  it('keeps all five of a Rollhouse', () => {
     const { keep } = chooseKeep(d(5, 5, 5, 5, 5), createEmptyScoreSheet());
     expect(keep).toHaveLength(5);
   });
@@ -131,10 +131,24 @@ describe('chooseKeep', () => {
   });
 });
 
-describe('isYahtzee', () => {
-  it('detects five alike only', () => {
-    expect(isYahtzee(d(3, 3, 3, 3, 3))).toBe(true);
-    expect(isYahtzee(d(3, 3, 3, 3, 2))).toBe(false);
+describe('Joker', () => {
+  it('obeys the forced upper box even when a lower box pays more', () => {
+    const sheet = createEmptyScoreSheet();
+    sheet.rollhouse = 50;
+    expect(chooseCategory(d(1, 1, 1, 1, 1), sheet)).toBe('ones');
+  });
+
+  it('cashes a Joker in as a large straight once its upper box is gone', () => {
+    const sheet = createEmptyScoreSheet();
+    sheet.rollhouse = 50;
+    sheet.ones = 3;
+    expect(chooseCategory(d(1, 1, 1, 1, 1), sheet)).toBe('largeStraight');
+  });
+
+  it('keeps all five when another Rollhouse is worth the bonus', () => {
+    const sheet = createEmptyScoreSheet();
+    sheet.rollhouse = 50;
+    expect(chooseKeep(d(2, 2, 2, 2, 2), sheet).keep).toHaveLength(5);
   });
 });
 

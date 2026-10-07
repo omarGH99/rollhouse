@@ -69,10 +69,9 @@ describe('rendering', () => {
     expect(screen.getByText('17')).toBeTruthy();
   });
 
-  it('uses the renamed Qomar label rather than Yahtzee', () => {
-    setup({ category: 'yahtzee' });
-    expect(screen.getByText(/^QOMAR/)).toBeTruthy();
-    expect(screen.queryByText(/YAHTZEE/i)).toBeNull();
+  it('labels the five-alike box with the game\u2019s own name', () => {
+    setup({ category: 'rollhouse' });
+    expect(screen.getByText(/^Rollhouse/)).toBeTruthy();
   });
 });
 

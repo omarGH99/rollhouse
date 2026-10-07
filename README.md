@@ -1,13 +1,23 @@
-# Qomara Mazn
+# Rollhouse
 
-A dice game for two to four players, built with Expo and React Native. Play
+A five-dice, three-roll classic for two to four players, built with Expo and React Native. Play
 pass-and-play on one device, or against a bot.
 
+- **Shake to throw** — each turn opens on a page of nothing but the dice;
+  shake the phone (or tap) to roll, then head to the table to score
+- **Full standard rules**, including the 100-point bonus for every extra
+  Rollhouse (five alike) and the Joker rule that goes with it
 - **AI opponent** — exact one-ply expectimax, averaging around 215 a game
-- **2–4 players**, any mix of people and bots
+- **2–4 players**, any mix of people and bots, with your own names
 - **Undo**, so a mis-tapped category is recoverable
 - Games **survive being closed**, and stats persist across them
-- 197 tests over the rules engine, the AI, persistence and the UI
+- Tests over the rules engine, the AI, persistence and the UI
+
+| Throw | Score | Bonus | Setup |
+|---|---|---|---|
+| <img src="docs/screenshots/04-thrown.png" width="180" alt="The dice page after a throw, one die kept" /> | <img src="docs/screenshots/05-table-scoring.png" width="180" alt="The scorecard with a preview in every open box" /> | <img src="docs/screenshots/09-bonus-handoff.png" width="180" alt="Between turns, showing a 100-point bonus" /> | <img src="docs/screenshots/03-setup.png" width="180" alt="New game setup with named seats" /> |
+
+More in [docs/screenshots](docs/screenshots).
 
 ---
 

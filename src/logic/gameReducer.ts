@@ -8,7 +8,15 @@ import {
   Player,
   PlayerIndex,
 } from '../types';
-import { TOTAL_ROUNDS, createEmptyScoreSheet, scoreFor } from './scoring';
+import {
+  EXTRA_ROLLHOUSE_BONUS,
+  TOTAL_ROUNDS,
+  createEmptyScoreSheet,
+  earnsExtraRollhouse,
+  isJoker,
+  legalCategories,
+  scoreFor,
+} from './scoring';
 
 export const DICE_COUNT = 5;
 export const MAX_ROLLS = 3;
@@ -75,7 +83,7 @@ export type GameAction =
   | { type: 'SCORE'; category: Category }
   /** The incoming player tapped "start my turn" on the handoff overlay. */
   | { type: 'BEGIN_TURN' }
-  /** Take back the most recent scoring action. */
+  /** Take back the most recent score a person made. */
   | { type: 'UNDO' }
   /** Swap in a session loaded from disk. Session-level only. */
   | { type: 'RESTORE'; session: GameSession }
@@ -89,13 +97,32 @@ export const canRoll = (state: GameState): boolean =>
 export const canScore = (state: GameState, category: Category): boolean =>
   state.phase === 'turn' &&
   state.hasRolled &&
-  state.scores[state.currentPlayer][category] === null;
-
-export const canUndo = (session: GameSession): boolean =>
-  session.history.length > 0;
+  legalCategories(state.scores[state.currentPlayer], diceValues(state.dice)).includes(
+    category,
+  );
 
 export const activePlayer = (state: GameState): Player =>
   state.players[state.currentPlayer];
+
+/**
+ * Index of the snapshot UNDO returns to: the newest one taken on a person's
+ * turn. Bot turns are skipped — rewinding onto one would only hand the move
+ * straight back to the bot, so undo always lands on a decision a person made.
+ */
+const undoIndex = (session: GameSession): number => {
+  for (let i = session.history.length - 1; i >= 0; i -= 1) {
+    if (activePlayer(session.history[i]).kind === 'human') return i;
+  }
+  return -1;
+};
+
+export const canUndo = (session: GameSession): boolean => undoIndex(session) >= 0;
+
+/** Whose score UNDO would take back, or null when there is nothing to undo. */
+export const undoSeat = (session: GameSession): PlayerIndex | null => {
+  const index = undoIndex(session);
+  return index < 0 ? null : session.history[index].currentPlayer;
+};
 
 export const isAiTurn = (state: GameState): boolean =>
   state.phase === 'turn' && activePlayer(state).kind === 'ai';
@@ -107,7 +134,7 @@ export const humanSeatCount = (state: GameState): number =>
  * Whether the game is waiting for a person to start their turn.
  *
  * The between-turns screen is a *turn boundary*, not a privacy screen —
- * Yahtzee has no hidden information, every score is public on a shared card,
+ * The game has no hidden information, every score is public on a shared card,
  * and the screen even reports the move just played. What it actually buys is a
  * deliberate stop, so nobody rolls on someone else's turn and everyone gets a
  * beat to see what happened.
@@ -155,10 +182,19 @@ export const gameReducer = (state: GameState, action: GameAction): GameState => 
       if (!canScore(state, action.category)) return state;
 
       const player = state.currentPlayer;
-      const points = scoreFor(action.category, diceValues(state.dice));
+      const dice = diceValues(state.dice);
+      const sheet = state.scores[player];
+      const points = scoreFor(action.category, dice, isJoker(sheet, dice));
+      const extra = earnsExtraRollhouse(sheet, dice);
 
-      const scores = state.scores.map((sheet, i) =>
-        i === player ? { ...sheet, [action.category]: points } : sheet,
+      const scores = state.scores.map((other, i) =>
+        i === player
+          ? {
+              ...other,
+              [action.category]: points,
+              extraRollhouses: other.extraRollhouses + (extra ? 1 : 0),
+            }
+          : other,
       );
 
       const isLastPlayerOfRound = player === state.players.length - 1;
@@ -168,7 +204,12 @@ export const gameReducer = (state: GameState, action: GameAction): GameState => 
       return {
         ...state,
         scores,
-        lastScored: { player, category: action.category, points },
+        lastScored: {
+          player,
+          category: action.category,
+          points,
+          bonus: extra ? EXTRA_ROLLHOUSE_BONUS : 0,
+        },
         phase: isFinalTurn ? 'gameover' : 'handoff',
         incomingPlayer: nextPlayer,
         // Round advances once the last seat has played.
@@ -209,9 +250,10 @@ export const sessionReducer = (
   if (action.type === 'RESTORE') return action.session;
 
   if (action.type === 'UNDO') {
-    if (!canUndo(session)) return session;
-    const history = session.history.slice(0, -1);
-    return { state: session.history[session.history.length - 1], history };
+    const index = undoIndex(session);
+    if (index < 0) return session;
+    // Any bot turns played since that snapshot are discarded along with it.
+    return { state: session.history[index], history: session.history.slice(0, index) };
   }
 
   const state = gameReducer(session.state, action);

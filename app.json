@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Qomara Mazn",
-    "slug": "qomara-mazn",
+    "name": "Rollhouse",
+    "slug": "rollhouse",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
@@ -13,14 +13,14 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.omargh99.qomaramazn"
+      "bundleIdentifier": "com.omargh99.rollhouse"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1A0A0D"
       },
-      "package": "com.omargh99.qomaramazn"
+      "package": "com.omargh99.rollhouse"
     },
     "plugins": [
       "expo-asset",

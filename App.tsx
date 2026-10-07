@@ -18,10 +18,12 @@ import { RulesScreen } from './src/components/RulesScreen';
 import { Scorecard } from './src/components/Scorecard';
 import { SetupScreen } from './src/components/SetupScreen';
 import { StatsScreen } from './src/components/StatsScreen';
+import { ThrowScreen } from './src/components/ThrowScreen';
 import { TurnBanner } from './src/components/TurnBanner';
 import { Wordmark } from './src/components/Wordmark';
 import { awaitsTurnStart, humanSeatCount } from './src/logic/gameReducer';
-import { useYahtzeeGame } from './src/hooks/useYahtzeeGame';
+import { useRollhouseGame } from './src/hooks/useRollhouseGame';
+import { SHAKE_SUPPORTED, useShake } from './src/hooks/useShake';
 import { palette, seatAccent, spacing } from './src/theme';
 import { Player } from './src/types';
 
@@ -47,7 +49,7 @@ const Board: React.FC = () => {
     state,
     previews,
     canRoll,
-    canUndo,
+    undoPlayer,
     aiThinking,
     ready,
     stats,
@@ -61,11 +63,12 @@ const Board: React.FC = () => {
     newGame,
     reset,
     resetStats,
-  } = useYahtzeeGame();
+  } = useRollhouseGame();
 
   const [rulesOpen, setRulesOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
+  const [throwOpen, setThrowOpen] = useState(false);
 
   const accent = seatAccent(state.currentPlayer);
   const isOver = state.phase === 'gameover';
@@ -76,6 +79,39 @@ const Board: React.FC = () => {
 
   // A bot's handoff resolves itself, but the board must still be inert.
   const boardLocked = state.phase === 'handoff' || isOver || aiThinking;
+
+  /**
+   * A person's turn is played across two pages: the dice, then the table. It
+   * opens on the dice; bots are simply watched from the table.
+   */
+  const humanTurn = state.phase === 'turn' && !aiThinking;
+  const sheetOpen = rulesOpen || statsOpen || setupOpen;
+  const showThrow = throwOpen && humanTurn && ready;
+
+  useEffect(() => {
+    // Closing here as well as opening matters: an undo lands mid-turn with the
+    // dice already thrown, and should arrive at the table, not a stale page.
+    setThrowOpen(humanTurn && !state.hasRolled);
+    // Keyed on the turn, not on `hasRolled`: the first throw must not close it.
+    // `scores` is what tells a new or restored game apart from the same seat
+    // and round of the one before.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, humanTurn, state.currentPlayer, state.round, state.scores]);
+
+  // After the last throw there is nothing left to do here but look.
+  useEffect(() => {
+    if (!showThrow || !state.hasRolled || state.rollsLeft > 0) return;
+    const timer = setTimeout(() => setThrowOpen(false), 1600);
+    return () => clearTimeout(timer);
+  }, [showThrow, state.hasRolled, state.rollsLeft]);
+
+  useShake(roll, showThrow && canRoll && !sheetOpen);
+
+  /** Rolling from the table goes via the dice page, so the throw is seen there. */
+  const throwFromTable = () => {
+    setThrowOpen(true);
+    roll();
+  };
 
   // The outgoing player may have scrolled deep into the scorecard; the incoming
   // player should start at the dice, not wherever the last one left off.
@@ -117,7 +153,7 @@ const Board: React.FC = () => {
       <FitToHeight
         ref={scrollRef}
         // Nothing behind a curtain should be reachable, even by scroll.
-        scrollEnabled={!showHandoff && !isOver && !rulesOpen && !statsOpen && !setupOpen}
+        scrollEnabled={!showHandoff && !isOver && !sheetOpen && !showThrow}
         contentStyle={[
           styles.scroll,
           {
@@ -163,7 +199,7 @@ const Board: React.FC = () => {
           rollNonce={state.rollNonce}
           canRoll={canRoll}
           aiThinking={aiThinking}
-          onRoll={roll}
+          onRoll={throwFromTable}
           onToggleHold={toggleHold}
         />
 
@@ -180,6 +216,22 @@ const Board: React.FC = () => {
         />
       </FitToHeight>
 
+      <ThrowScreen
+        visible={showThrow}
+        playerName={state.players[state.currentPlayer].name}
+        accent={accent}
+        dice={state.dice}
+        rollsLeft={state.rollsLeft}
+        hasRolled={state.hasRolled}
+        rollNonce={state.rollNonce}
+        canRoll={canRoll}
+        previews={previews}
+        shakeSupported={SHAKE_SUPPORTED}
+        onRoll={roll}
+        onToggleHold={toggleHold}
+        onDone={() => setThrowOpen(false)}
+      />
+
       <HandoffOverlay
         visible={showHandoff}
         players={state.players}
@@ -188,7 +240,7 @@ const Board: React.FC = () => {
         roundFullyComplete={state.incomingPlayer === 0}
         lastScored={state.lastScored}
         passDevice={humanSeatCount(state) > 1}
-        canUndo={canUndo}
+        undoPlayer={undoPlayer}
         onBegin={beginTurn}
         onUndo={undo}
       />

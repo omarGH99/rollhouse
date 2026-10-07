@@ -13,7 +13,7 @@ export const Wordmark: React.FC<{ compact?: boolean }> = ({ compact = false }) =
       numberOfLines={1}
       style={[styles.title, compact && styles.titleCompact, textGlow(palette.brass, 10)]}
     >
-      QOMARA MAZN
+      ROLLHOUSE
     </Text>
     <View style={styles.ruleRow}>
       <View style={styles.rule} />

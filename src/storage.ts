@@ -1,13 +1,19 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { GameSession } from './logic/gameReducer';
-import { deserializeSession, serializeSession } from './logic/persistence';
+import {
+  deserializePlayers,
+  deserializeSession,
+  serializePlayers,
+  serializeSession,
+} from './logic/persistence';
 import {
   Stats,
   deserializeStats,
   emptyStats,
   serializeStats,
 } from './logic/stats';
+import { Player } from './types';
 
 /**
  * The only module that touches the device. Everything it stores and loads is
@@ -18,8 +24,30 @@ import {
  * saved game, never a crash.
  */
 
-const GAME_KEY = 'yahtzee:game:v1';
-const STATS_KEY = 'yahtzee:stats:v1';
+const GAME_KEY = 'rollhouse:game';
+const STATS_KEY = 'rollhouse:stats';
+const SEATS_KEY = 'rollhouse:seats';
+
+/** Where builds before the rename kept the same two payloads. */
+const LEGACY_PREFIX = 'yahtzee';
+const LEGACY_GAME_KEY = `${LEGACY_PREFIX}:game:v1`;
+const LEGACY_STATS_KEY = `${LEGACY_PREFIX}:stats:v1`;
+
+/**
+ * Read `key`, falling back once to the key an older build used. A legacy value
+ * is copied across before the old key is dropped, so it cannot be lost between
+ * the two — stats in particular are not rewritten until a game finishes.
+ */
+const readMigrating = async (key: string, legacyKey: string): Promise<string | null> => {
+  const current = await AsyncStorage.getItem(key);
+  if (current !== null) return current;
+
+  const legacy = await AsyncStorage.getItem(legacyKey);
+  if (legacy === null) return null;
+  await AsyncStorage.setItem(key, legacy);
+  await AsyncStorage.removeItem(legacyKey);
+  return legacy;
+};
 
 export const saveGame = async (session: GameSession): Promise<void> => {
   try {
@@ -31,7 +59,7 @@ export const saveGame = async (session: GameSession): Promise<void> => {
 
 export const loadGame = async (): Promise<GameSession | null> => {
   try {
-    return deserializeSession(await AsyncStorage.getItem(GAME_KEY));
+    return deserializeSession(await readMigrating(GAME_KEY, LEGACY_GAME_KEY));
   } catch {
     return null;
   }
@@ -55,7 +83,7 @@ export const saveStats = async (stats: Stats): Promise<void> => {
 
 export const loadStats = async (): Promise<Stats> => {
   try {
-    return deserializeStats(await AsyncStorage.getItem(STATS_KEY));
+    return deserializeStats(await readMigrating(STATS_KEY, LEGACY_STATS_KEY));
   } catch {
     return emptyStats();
   }
@@ -66,5 +94,21 @@ export const clearStats = async (): Promise<void> => {
     await AsyncStorage.removeItem(STATS_KEY);
   } catch {
     // Ignored.
+  }
+};
+
+export const saveSeats = async (players: Player[]): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(SEATS_KEY, serializePlayers(players));
+  } catch {
+    // Ignored.
+  }
+};
+
+export const loadSeats = async (): Promise<Player[] | null> => {
+  try {
+    return deserializePlayers(await AsyncStorage.getItem(SEATS_KEY));
+  } catch {
+    return null;
   }
 };

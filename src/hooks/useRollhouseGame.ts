@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import * as Haptics from 'expo-haptics';
 
-import { Category, GameState, Player } from '../types';
+import { Category, DieValue, GameState, Player, PlayerIndex } from '../types';
 import {
   DICE_COUNT,
   GameSession,
@@ -14,16 +14,19 @@ import {
   awaitsTurnStart,
   isAiTurn,
   sessionReducer,
+  undoSeat,
 } from '../logic/gameReducer';
 import { chooseCategory, chooseKeep } from '../logic/ai';
-import { grandTotal, previewScores, scoreFor } from '../logic/scoring';
+import { grandTotal, previewScores } from '../logic/scoring';
 import { Achievement, Stats, emptyStats, recordGame } from '../logic/stats';
 import {
   clearGame,
   clearStats,
   loadGame,
+  loadSeats,
   loadStats,
   saveGame,
+  saveSeats,
   saveStats,
 } from '../storage';
 
@@ -32,13 +35,15 @@ const AI_THINK_MS = 700;
 const AI_ROLL_MS = 1100;
 const AI_HANDOFF_MS = 900;
 
-export interface YahtzeeGame {
+export interface RollhouseGame {
   state: GameState;
   /** Preview points per open category for the *current* player. */
   previews: Partial<Record<Category, number>>;
   totals: number[];
   canRoll: boolean;
   canUndo: boolean;
+  /** Whose score undo would take back, or null when undo is unavailable. */
+  undoPlayer: PlayerIndex | null;
   /** True while an AI seat is taking its turn; the board is read-only. */
   aiThinking: boolean;
   /** False until the saved game (if any) has been read from disk. */
@@ -66,7 +71,7 @@ const notify = (type: Haptics.NotificationFeedbackType) => {
   Haptics.notificationAsync(type).catch(() => {});
 };
 
-export const useYahtzeeGame = (): YahtzeeGame => {
+export const useRollhouseGame = (): RollhouseGame => {
   const [session, dispatch] = useReducer(
     sessionReducer,
     undefined,
@@ -85,10 +90,19 @@ export const useYahtzeeGame = (): YahtzeeGame => {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [saved, savedStats] = await Promise.all([loadGame(), loadStats()]);
+      const [saved, savedStats, seats] = await Promise.all([
+        loadGame(),
+        loadStats(),
+        loadSeats(),
+      ]);
       if (cancelled) return;
       setStats(savedStats);
-      if (saved) dispatch({ type: 'RESTORE', session: saved });
+      if (saved) {
+        dispatch({ type: 'RESTORE', session: saved });
+      } else if (seats) {
+        // No game to resume: still seat the same people as last time.
+        dispatch({ type: 'RESET', players: seats });
+      }
       setReady(true);
     })();
     return () => {
@@ -113,18 +127,21 @@ export const useYahtzeeGame = (): YahtzeeGame => {
 
   const recordedRef = useRef<GameState | null>(null);
 
+  // Read from the effect below without making it re-run when stats change.
+  const statsRef = useRef(stats);
+  statsRef.current = stats;
+
   useEffect(() => {
     if (!ready || state.phase !== 'gameover') return;
     // Guard against re-running on unrelated re-renders.
     if (recordedRef.current === state) return;
     recordedRef.current = state;
 
-    setStats((current) => {
-      const { stats: next, newlyUnlocked } = recordGame(current, state);
-      if (newlyUnlocked.length) setPendingAchievements(newlyUnlocked);
-      void saveStats(next);
-      return next;
-    });
+    const { stats: next, newlyUnlocked } = recordGame(statsRef.current, state);
+    statsRef.current = next;
+    setStats(next);
+    if (newlyUnlocked.length) setPendingAchievements(newlyUnlocked);
+    void saveStats(next);
   }, [ready, state]);
 
   /* ---------------------------------------------------------------------- */
@@ -151,8 +168,8 @@ export const useYahtzeeGame = (): YahtzeeGame => {
    * one of them a new identity on every dispatch, and defeat every `React.memo`
    * below this hook.
    */
-  const liveRef = useRef({ state, aiTurn });
-  liveRef.current = { state, aiTurn };
+  const liveRef = useRef({ state, aiTurn, previews });
+  liveRef.current = { state, aiTurn, previews };
 
   /* ---------------------------------------------------------------------- */
   /* Actions                                                                 */
@@ -174,7 +191,8 @@ export const useYahtzeeGame = (): YahtzeeGame => {
   const score = useCallback((category: Category) => {
     const live = liveRef.current;
     if (!canScore(live.state, category) || live.aiTurn) return;
-    const points = scoreFor(category, diceValues(live.state.dice));
+    // `previews` holds exactly what each legal box would pay, Joker included.
+    const points = live.previews[category] ?? 0;
     notify(
       points > 0
         ? Haptics.NotificationFeedbackType.Success
@@ -197,6 +215,7 @@ export const useYahtzeeGame = (): YahtzeeGame => {
     tap(Haptics.ImpactFeedbackStyle.Medium);
     setPendingAchievements([]);
     recordedRef.current = null;
+    void saveSeats(players);
     dispatch({ type: 'RESET', players });
   }, []);
 
@@ -231,6 +250,21 @@ export const useYahtzeeGame = (): YahtzeeGame => {
   }, [ready, state]);
 
   /**
+   * The bot's hold plan for the dice as they lie. Holds are applied one die per
+   * tick, and every tick is a state change, so without this the full search
+   * would re-run for each die it touches. Keyed on the faces, not the dice
+   * array, because toggling a hold replaces the array but changes no face.
+   */
+  const aiSheet = state.scores[state.currentPlayer];
+  const aiFaces = diceValues(state.dice).join('');
+  const aiPlanning = aiTurn && state.hasRolled && state.rollsLeft > 0;
+  const aiKeep = useMemo(() => {
+    if (!aiPlanning) return null;
+    const faces = Array.from(aiFaces, (face) => Number(face) as DieValue);
+    return new Set(chooseKeep(faces, aiSheet).keep);
+  }, [aiPlanning, aiFaces, aiSheet]);
+
+  /**
    * One scheduled step per render while the bot is on turn. Each step either
    * rolls, adjusts holds, or scores — driving the same actions a human would,
    * so the AI is visible on the board rather than resolved instantly.
@@ -256,8 +290,8 @@ export const useYahtzeeGame = (): YahtzeeGame => {
 
     // Mid-turn: set holds to match the bot's plan, one die per tick so the
     // change is legible, then roll once the plan is in place.
-    const keep = new Set(chooseKeep(dice, sheet).keep);
-    const mismatch = state.dice.findIndex((die, i) => die.held !== keep.has(i));
+    if (!aiKeep) return;
+    const mismatch = state.dice.findIndex((die, i) => die.held !== aiKeep.has(i));
 
     const timer = setTimeout(
       () => {
@@ -270,7 +304,7 @@ export const useYahtzeeGame = (): YahtzeeGame => {
       mismatch >= 0 ? 220 : AI_ROLL_MS,
     );
     return () => clearTimeout(timer);
-  }, [ready, aiTurn, state]);
+  }, [ready, aiTurn, aiKeep, state]);
 
   return {
     state,
@@ -279,6 +313,7 @@ export const useYahtzeeGame = (): YahtzeeGame => {
     canRoll: canRoll(state) && !aiTurn,
     // Undoing mid-bot-turn would fight the AI driver for control.
     canUndo: canUndo(session) && !aiTurn,
+    undoPlayer: aiTurn ? null : undoSeat(session),
     aiThinking: aiTurn,
     ready,
     stats,

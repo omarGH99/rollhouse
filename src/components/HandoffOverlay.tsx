@@ -12,7 +12,7 @@ import Animated, {
 import { ActionButton } from './ActionButton';
 import { CATEGORY_LABELS } from '../logic/scoring';
 import { accents, fonts, palette, radius, spacing, textGlow } from '../theme';
-import { Category, Player, PlayerIndex } from '../types';
+import { LastScored, Player, PlayerIndex } from '../types';
 
 interface Props {
   visible: boolean;
@@ -23,10 +23,11 @@ interface Props {
   completedRound: number;
   /** True once every seat has taken its turn in that round. */
   roundFullyComplete: boolean;
-  lastScored: { player: PlayerIndex; category: Category; points: number } | null;
+  lastScored: LastScored | null;
   /** More than one human seat, so the device physically changes hands. */
   passDevice: boolean;
-  canUndo: boolean;
+  /** Whose score undo would take back; null hides the control. */
+  undoPlayer: PlayerIndex | null;
   onBegin: () => void;
   onUndo: () => void;
 }
@@ -34,13 +35,14 @@ interface Props {
 /**
  * The boundary between turns.
  *
- * Not a privacy screen: Yahtzee has no hidden information — every score is
+ * Not a privacy screen: the game has no hidden information — every score is
  * public on a shared card — and this very screen reports the move just played.
  * What it buys is a deliberate stop, so nobody rolls on someone else's turn,
  * and a beat to see what happened.
  *
  * Undo lives here because this is the one moment the player who just scored is
- * still the one holding the device.
+ * still the one holding the device. Against bots that same person is also the
+ * one coming up next, so the label says "my"; otherwise it names the seat.
  */
 export const HandoffOverlay: React.FC<Props> = ({
   visible,
@@ -50,7 +52,7 @@ export const HandoffOverlay: React.FC<Props> = ({
   roundFullyComplete,
   lastScored,
   passDevice,
-  canUndo,
+  undoPlayer,
   onBegin,
   onUndo,
 }) => {
@@ -72,6 +74,13 @@ export const HandoffOverlay: React.FC<Props> = ({
 
   const accent = accents[incomingPlayer];
   const incoming = players[incomingPlayer];
+
+  const undoLabel =
+    undoPlayer === null
+      ? null
+      : undoPlayer === incomingPlayer
+        ? 'Undo my last score'
+        : `Undo ${players[undoPlayer].name}'s last score`;
 
   if (!visible) return null;
 
@@ -114,6 +123,11 @@ export const HandoffOverlay: React.FC<Props> = ({
             >
               +{lastScored.points}
             </Text>
+            {lastScored.bonus > 0 ? (
+              <Text style={[styles.lastScoreBonus, { color: palette.brassBright }]}>
+                +{lastScored.bonus} BONUS
+              </Text>
+            ) : null}
           </View>
         ) : null}
 
@@ -142,16 +156,16 @@ export const HandoffOverlay: React.FC<Props> = ({
           style={styles.cta}
         />
 
-        {canUndo ? (
+        {undoLabel ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Undo my last score"
+            accessibilityLabel={undoLabel}
             onPress={onUndo}
             hitSlop={10}
             style={styles.undo}
           >
             <Ionicons name="arrow-undo-outline" size={14} color={palette.textDim} />
-            <Text style={styles.undoText}>Undo my last score</Text>
+            <Text style={styles.undoText}>{undoLabel}</Text>
           </Pressable>
         ) : null}
       </Animated.View>
@@ -209,6 +223,12 @@ const styles = StyleSheet.create({
     fontFamily: fonts.numeric,
     fontSize: 16,
     fontWeight: '700',
+  },
+  lastScoreBonus: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.2,
   },
   headline: {
     fontFamily: fonts.body,

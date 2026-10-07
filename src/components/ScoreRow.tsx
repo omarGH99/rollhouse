@@ -129,7 +129,7 @@ const ScoreRowInner: React.FC<Props> = ({
   const flashStyle = useAnimatedStyle(() => ({ opacity: flash.value * 0.8 }));
 
   const values = scores.map((sheet) => sheet[category]);
-  const isYahtzee = category === 'yahtzee';
+  const isRollhouse = category === 'rollhouse';
   const width = cellWidth(values.length);
   const compact = values.length >= 4;
 
@@ -186,7 +186,7 @@ const ScoreRowInner: React.FC<Props> = ({
           numberOfLines={1}
           style={[
             styles.label,
-            isYahtzee && styles.labelYahtzee,
+            isRollhouse && styles.labelRollhouse,
             // Struck through when spent. Roughly 1 in 12 men cannot separate
             // the green/red pair, so availability must not rest on colour.
             !available && styles.labelSpent,
@@ -295,7 +295,7 @@ const styles = StyleSheet.create({
   labelSpent: {
     textDecorationLine: 'line-through',
   },
-  labelYahtzee: {
+  labelRollhouse: {
     letterSpacing: 2,
     fontFamily: fonts.display,
     fontWeight: '700',

@@ -11,7 +11,7 @@ import {
 import { ALL_CATEGORIES, UPPER_CATEGORIES, createEmptyScoreSheet } from './scoring';
 import { GameState, Player, ScoreSheet } from '../types';
 
-/** A completed sheet whose grand total is exactly `target` (via chance/yahtzee). */
+/** A completed sheet whose grand total is exactly `target` (via chance/rollhouse). */
 const sheetScoring = (overrides: Partial<ScoreSheet> = {}): ScoreSheet => {
   const sheet = createEmptyScoreSheet();
   ALL_CATEGORIES.forEach((c) => {
@@ -130,13 +130,21 @@ describe('recordGame', () => {
     expect(stats.aiWins).toBe(1);
   });
 
-  it('counts human Yahtzees only', () => {
+  it('counts human Rollhouses only', () => {
     const game = finishedGame(
       [human, bot],
-      [sheetScoring({ yahtzee: 50 }), sheetScoring({ yahtzee: 50 })],
+      [sheetScoring({ rollhouse: 50 }), sheetScoring({ rollhouse: 50 })],
     );
     const { stats } = recordGame(emptyStats(), game);
-    expect(stats.yahtzees).toBe(1);
+    expect(stats.rollhouses).toBe(1);
+  });
+
+  it('counts extra Rollhouses too', () => {
+    const game = finishedGame(
+      [human, bot],
+      [sheetScoring({ rollhouse: 50, extraRollhouses: 2 }), sheetScoring()],
+    );
+    expect(recordGame(emptyStats(), game).stats.rollhouses).toBe(3);
   });
 
   it('counts the upper bonus when it is earned', () => {
@@ -218,15 +226,45 @@ describe('serialization', () => {
     expect(deserializeStats('{ broken')).toEqual(emptyStats());
   });
 
-  it('discards a mismatched version', () => {
+  it('discards stats written by a newer build', () => {
     const stale = JSON.stringify({ ...emptyStats(), version: 99, gamesPlayed: 5 });
     expect(deserializeStats(stale).gamesPlayed).toBe(0);
   });
 
   it('repairs a missing unlocked array', () => {
-    const partial = JSON.stringify({ version: 1, gamesPlayed: 3 } as Partial<Stats>);
+    const partial = JSON.stringify({ version: 2, gamesPlayed: 3 } as Partial<Stats>);
     const stats = deserializeStats(partial);
     expect(stats.unlocked).toEqual([]);
     expect(stats.gamesPlayed).toBe(3);
+  });
+
+  it('drops malformed counters without losing the good ones', () => {
+    const raw = JSON.stringify({ version: 2, gamesPlayed: 4, bestScore: 'lots', humanWins: -2 });
+    const stats = deserializeStats(raw);
+    expect(stats.gamesPlayed).toBe(4);
+    expect(stats.bestScore).toBe(0);
+    expect(stats.humanWins).toBe(0);
+  });
+
+  it('carries a v1 record forward under the new names', () => {
+    const legacy = 'yahtzee';
+    const raw = JSON.stringify({
+      version: 1,
+      gamesPlayed: 9,
+      bestScore: 281,
+      [`${legacy}s`]: 4,
+      unlocked: ['first-game', legacy],
+    });
+    const stats = deserializeStats(raw);
+    expect(stats.version).toBe(2);
+    expect(stats.gamesPlayed).toBe(9);
+    expect(stats.bestScore).toBe(281);
+    expect(stats.rollhouses).toBe(4);
+    expect(stats.unlocked).toEqual(['first-game', 'rollhouse']);
+  });
+
+  it('rejects a payload that is not a stats object', () => {
+    expect(deserializeStats('null')).toEqual(emptyStats());
+    expect(deserializeStats('{"gamesPlayed":2}')).toEqual(emptyStats());
   });
 });

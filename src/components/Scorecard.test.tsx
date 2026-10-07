@@ -58,7 +58,7 @@ describe('structure', () => {
     setup();
     expect(screen.getByText(/^Ones/)).toBeTruthy();
     expect(screen.getByText(/^Sixes/)).toBeTruthy();
-    expect(screen.getByText(/^QOMAR/)).toBeTruthy();
+    expect(screen.getByText(/^Rollhouse/)).toBeTruthy();
     expect(screen.getByText(/^Chance/)).toBeTruthy();
   });
 

@@ -1,11 +1,15 @@
 import { Category, DieValue, ScoreSheet } from '../types';
 import {
   ALL_CATEGORIES,
+  EXTRA_ROLLHOUSE_BONUS,
+  ROLLHOUSE_POINTS,
   UPPER_BONUS_POINTS,
   UPPER_BONUS_THRESHOLD,
   UPPER_CATEGORIES,
+  earnsExtraRollhouse,
+  isJoker,
+  legalCategories,
   scoreFor,
-  tallyFaces,
   upperSubtotal,
 } from './scoring';
 
@@ -66,7 +70,7 @@ const positionalBonus = (
   // Burning a high-value box on a zero is much worse than its 0 points suggest.
   if (points === 0) {
     const cost: Partial<Record<Category, number>> = {
-      yahtzee: 14,
+      rollhouse: 14,
       largeStraight: 9,
       smallStraight: 6,
       fullHouse: 5,
@@ -90,14 +94,20 @@ const bestValue = (
   sheet: ScoreSheet,
   open: Category[],
 ): number => {
+  // A Joker narrows where the hand may go and changes what it is worth there.
+  // Only six of the 252 distinct hands are five alike, so this stays cheap.
+  const joker = isJoker(sheet, dice);
+  const options = joker ? legalCategories(sheet, dice) : open;
+  const extra = earnsExtraRollhouse(sheet, dice) ? EXTRA_ROLLHOUSE_BONUS : 0;
+
   let best = -Infinity;
-  for (let i = 0; i < open.length; i += 1) {
-    const category = open[i];
-    const points = scoreFor(category, dice);
+  for (let i = 0; i < options.length; i += 1) {
+    const category = options[i];
+    const points = scoreFor(category, dice, joker);
     const value = points + positionalBonus(category, points, sheet);
     if (value > best) best = value;
   }
-  return best === -Infinity ? 0 : best;
+  return best === -Infinity ? 0 : best + extra;
 };
 
 const openCategories = (sheet: ScoreSheet): Category[] =>
@@ -203,22 +213,27 @@ export const chooseKeep = (
   return best;
 };
 
-/** Which box to take, given a final hand. Never returns a filled category. */
+/**
+ * Which box to take, given a final hand. Only ever returns a box the rules
+ * allow for these dice, so never a filled one and never one a Joker forbids.
+ */
 export const chooseCategory = (dice: DieValue[], sheet: ScoreSheet): Category => {
-  const open = openCategories(sheet);
+  const open = legalCategories(sheet, dice);
   if (open.length === 0) {
     throw new Error('chooseCategory called on a full sheet');
   }
+  const joker = isJoker(sheet, dice);
 
   let best = open[0];
   let bestValue = -Infinity;
 
   for (const category of open) {
-    const points = scoreFor(category, dice);
+    const points = scoreFor(category, dice, joker);
     let value = points + positionalBonus(category, points, sheet);
 
-    // With a genuine Yahtzee in hand, take it rather than bank the pips.
-    if (category === 'yahtzee' && points === 50) value += 25;
+    // With a genuine Rollhouse in hand, take it rather than bank the pips:
+    // the box is also what unlocks the bonus for any that follow.
+    if (category === 'rollhouse' && points === ROLLHOUSE_POINTS) value += 25;
 
     // Prefer to dump an unavoidable zero in the cheapest box available.
     if (points === 0 && open.length > 1) value -= 0.5;
@@ -232,6 +247,3 @@ export const chooseCategory = (dice: DieValue[], sheet: ScoreSheet): Category =>
   return best;
 };
 
-/** True when the hand is five alike — used for commentary and stats. */
-export const isYahtzee = (dice: DieValue[]): boolean =>
-  tallyFaces(dice).some((count) => count === 5);

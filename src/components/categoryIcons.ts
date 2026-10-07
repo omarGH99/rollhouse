@@ -18,6 +18,6 @@ export const CATEGORY_ICONS: Record<Category, IoniconName> = {
   fullHouse: 'home-outline',
   smallStraight: 'trending-up-outline',
   largeStraight: 'analytics-outline',
-  yahtzee: 'flame-outline',
+  rollhouse: 'flame-outline',
   chance: 'shuffle-outline',
 };

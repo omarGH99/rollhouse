@@ -14,6 +14,7 @@ import {
   gameReducer,
   isAiTurn,
   sessionReducer,
+  undoSeat,
 } from './gameReducer';
 import { ALL_CATEGORIES, TOTAL_ROUNDS, isSheetComplete } from './scoring';
 import { Category, GameState, Player } from '../types';
@@ -355,6 +356,38 @@ describe('undo', () => {
     session = sessionReducer(session, { type: 'UNDO' });
     expect(session.state.phase).toBe('turn');
   });
+
+  describe('against a bot', () => {
+    const table: Player[] = [
+      { name: 'Player 1', kind: 'human' },
+      { name: 'Bot 2', kind: 'ai' },
+    ];
+
+    it('skips the bot turn and returns to the human move', () => {
+      let session = createSession(table);
+      session = sessionReducer(session, { type: 'ROLL' });
+      const mine = session.state;
+      session = sessionReducer(session, { type: 'SCORE', category: 'chance' });
+      session = sessionReducer(session, { type: 'BEGIN_TURN' });
+      session = scoreOnce(session);
+      expect(session.history).toHaveLength(2);
+      expect(undoSeat(session)).toBe(0);
+
+      session = sessionReducer(session, { type: 'UNDO' });
+      expect(session.state).toBe(mine);
+      expect(session.state.scores[1]).toEqual(mine.scores[1]);
+      expect(session.history).toHaveLength(0);
+    });
+
+    it('has nothing to undo when only bots have played', () => {
+      let session = createSession([table[1], table[0]]);
+      session = scoreOnce(session);
+      expect(session.history).toHaveLength(1);
+      expect(canUndo(session)).toBe(false);
+      expect(undoSeat(session)).toBeNull();
+      expect(sessionReducer(session, { type: 'UNDO' })).toBe(session);
+    });
+  });
 });
 
 describe('turn handoff', () => {
@@ -422,5 +455,64 @@ describe('turn handoff', () => {
       }
       expect(state.phase).toBe('gameover');
     }
+  });
+});
+
+describe('extra Rollhouses', () => {
+  /** A live turn showing five of `face`, with `sheet` as the active card. */
+  const holding = (face: 1 | 2 | 3 | 4 | 5 | 6, sheet: Partial<GameState['scores'][0]>) => {
+    const state = gameReducer(createInitialState(), { type: 'ROLL' });
+    return {
+      ...state,
+      dice: state.dice.map((die) => ({ ...die, value: face })),
+      scores: state.scores.map((s, i) => (i === 0 ? { ...s, ...sheet } : s)),
+    };
+  };
+
+  it('awards the bonus on top of the box, and reports it', () => {
+    const next = gameReducer(holding(6, { rollhouse: 50 }), {
+      type: 'SCORE',
+      category: 'sixes',
+    });
+    expect(next.scores[0].sixes).toBe(30);
+    expect(next.scores[0].extraRollhouses).toBe(1);
+    expect(next.scores[1].extraRollhouses).toBe(0);
+    expect(next.lastScored).toEqual({
+      player: 0,
+      category: 'sixes',
+      points: 30,
+      bonus: 100,
+    });
+  });
+
+  it('refuses a box the Joker rule forbids', () => {
+    const state = holding(6, { rollhouse: 50 });
+    expect(canScore(state, 'largeStraight')).toBe(false);
+    expect(gameReducer(state, { type: 'SCORE', category: 'largeStraight' })).toBe(state);
+  });
+
+  it('pays a straight in full once the upper box is taken', () => {
+    const next = gameReducer(holding(6, { rollhouse: 50, sixes: 18 }), {
+      type: 'SCORE',
+      category: 'largeStraight',
+    });
+    expect(next.scores[0].largeStraight).toBe(40);
+    expect(next.scores[0].extraRollhouses).toBe(1);
+  });
+
+  it('gives no bonus after a zeroed Rollhouse box, but still plays as a Joker', () => {
+    const next = gameReducer(holding(6, { rollhouse: 0, sixes: 18 }), {
+      type: 'SCORE',
+      category: 'fullHouse',
+    });
+    expect(next.scores[0].fullHouse).toBe(25);
+    expect(next.scores[0].extraRollhouses).toBe(0);
+    expect(next.lastScored?.bonus).toBe(0);
+  });
+
+  it('scores the first Rollhouse normally, with no bonus', () => {
+    const next = gameReducer(holding(6, {}), { type: 'SCORE', category: 'rollhouse' });
+    expect(next.scores[0].rollhouse).toBe(50);
+    expect(next.scores[0].extraRollhouses).toBe(0);
   });
 });

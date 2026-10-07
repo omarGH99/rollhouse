@@ -17,9 +17,9 @@ const setup = (props: Partial<React.ComponentProps<typeof HandoffOverlay>> = {})
       incomingPlayer={1}
       completedRound={3}
       roundFullyComplete={false}
-      lastScored={{ player: 0, category: 'chance', points: 21 }}
+      lastScored={{ player: 0, category: 'chance', points: 21, bonus: 0 }}
       passDevice
-      canUndo={false}
+      undoPlayer={null}
       onBegin={jest.fn()}
       onUndo={jest.fn()}
       {...props}
@@ -52,7 +52,7 @@ describe('wording', () => {
   });
 
   it('makes no claim about hiding the board', () => {
-    // Yahtzee has no hidden information; the old "no peeking" copy oversold
+    // The game has no hidden information; the old "no peeking" copy oversold
     // what this screen does.
     setup({ passDevice: true });
     expect(screen.queryByText(/peek/i)).toBeNull();
@@ -79,6 +79,12 @@ describe('last score', () => {
     expect(screen.getByText('+21')).toBeTruthy();
   });
 
+  it('calls out an extra-Rollhouse bonus', () => {
+    setup({ lastScored: { player: 0, category: 'sixes', points: 30, bonus: 100 } });
+    expect(screen.getByText('+30')).toBeTruthy();
+    expect(screen.getByText('+100 BONUS')).toBeTruthy();
+  });
+
   it('copes with no score yet', () => {
     setup({ lastScored: null });
     expect(screen.queryByText(/\+/)).toBeNull();
@@ -87,21 +93,27 @@ describe('last score', () => {
 
 describe('undo', () => {
   it('is hidden when there is nothing to take back', () => {
-    setup({ canUndo: false });
-    expect(screen.queryByText('Undo my last score')).toBeNull();
+    setup({ undoPlayer: null });
+    expect(screen.queryByText(/^Undo/)).toBeNull();
   });
 
   it('is offered when a move can be taken back', () => {
     // Undo lives here because this is the one moment the player who just
     // scored still holds the device.
-    setup({ canUndo: true });
+    setup({ undoPlayer: 0 });
+    expect(screen.getByText("Undo Player 1's last score")).toBeTruthy();
+  });
+
+  it('says "my" when the incoming player is the one who scored', () => {
+    // Against bots, the person tapping in is also the last person who played.
+    setup({ undoPlayer: 1 });
     expect(screen.getByText('Undo my last score')).toBeTruthy();
   });
 
   it('fires the undo handler', () => {
     const onUndo = jest.fn();
-    setup({ canUndo: true, onUndo });
-    fireEvent.press(screen.getByLabelText('Undo my last score'));
+    setup({ undoPlayer: 0, onUndo });
+    fireEvent.press(screen.getByLabelText("Undo Player 1's last score"));
     expect(onUndo).toHaveBeenCalled();
   });
 });

@@ -6,10 +6,14 @@ import {
   UPPER_BONUS_THRESHOLD,
   UPPER_CATEGORIES,
   createEmptyScoreSheet,
+  earnsExtraRollhouse,
   grandTotal,
+  isJoker,
   isSheetComplete,
+  legalCategories,
   lowerTotal,
   previewScores,
+  rollhouseBonus,
   scoreFor,
   tallyFaces,
   upperBonus,
@@ -97,8 +101,8 @@ describe('full house', () => {
     expect(scoreFor('fullHouse', d(3, 3, 5, 5, 5))).toBe(25);
   });
 
-  it('accepts five of a kind', () => {
-    expect(scoreFor('fullHouse', d(2, 2, 2, 2, 2))).toBe(25);
+  it('does not count five of a kind, which is no full house', () => {
+    expect(scoreFor('fullHouse', d(2, 2, 2, 2, 2))).toBe(0);
   });
 
   it('rejects four-plus-one and two-pair', () => {
@@ -138,10 +142,10 @@ describe('straights', () => {
   });
 });
 
-describe('yahtzee and chance', () => {
+describe('rollhouse and chance', () => {
   it('scores 50 for five alike, 0 otherwise', () => {
-    expect(scoreFor('yahtzee', d(5, 5, 5, 5, 5))).toBe(50);
-    expect(scoreFor('yahtzee', d(5, 5, 5, 5, 4))).toBe(0);
+    expect(scoreFor('rollhouse', d(5, 5, 5, 5, 5))).toBe(50);
+    expect(scoreFor('rollhouse', d(5, 5, 5, 5, 4))).toBe(0);
   });
 
   it('chance always takes the total', () => {
@@ -166,6 +170,69 @@ describe('upper bonus', () => {
   });
 });
 
+describe('extra Rollhouses', () => {
+  const fours = d(4, 4, 4, 4, 4);
+  const filled = (rollhouse: number): ScoreSheet => ({
+    ...createEmptyScoreSheet(),
+    rollhouse,
+  });
+
+  it('leaves the choice free while the Rollhouse box is open', () => {
+    const sheet = createEmptyScoreSheet();
+    expect(isJoker(sheet, fours)).toBe(false);
+    expect(legalCategories(sheet, fours)).toEqual(ALL_CATEGORIES);
+    expect(previewScores(sheet, fours).fullHouse).toBe(0);
+  });
+
+  it('pays the bonus only when the box was scored, not zeroed', () => {
+    expect(earnsExtraRollhouse(filled(50), fours)).toBe(true);
+    expect(earnsExtraRollhouse(filled(0), fours)).toBe(false);
+    expect(earnsExtraRollhouse(filled(50), d(4, 4, 4, 4, 5))).toBe(false);
+  });
+
+  it('is a Joker whether the box holds 50 or a zero', () => {
+    expect(isJoker(filled(50), fours)).toBe(true);
+    expect(isJoker(filled(0), fours)).toBe(true);
+  });
+
+  it('forces the matching upper box while it is open', () => {
+    expect(legalCategories(filled(50), fours)).toEqual(['fours']);
+    expect(previewScores(filled(50), fours)).toEqual({ fours: 20 });
+  });
+
+  it('then opens the lower section, at full value', () => {
+    const sheet = { ...filled(50), fours: 12 };
+    expect(legalCategories(sheet, fours)).toEqual(
+      LOWER_CATEGORIES.filter((c) => c !== 'rollhouse'),
+    );
+    expect(previewScores(sheet, fours)).toEqual({
+      threeOfAKind: 20,
+      fourOfAKind: 20,
+      fullHouse: 25,
+      smallStraight: 30,
+      largeStraight: 40,
+      chance: 20,
+    });
+  });
+
+  it('falls back to a zero in an open upper box', () => {
+    const sheet = { ...filled(50), fours: 12 };
+    LOWER_CATEGORIES.forEach((c) => {
+      sheet[c] = sheet[c] ?? 0;
+    });
+    expect(legalCategories(sheet, fours)).toEqual(
+      UPPER_CATEGORIES.filter((c) => c !== 'fours'),
+    );
+    expect(previewScores(sheet, fours).sixes).toBe(0);
+  });
+
+  it('adds 100 per extra Rollhouse to the grand total', () => {
+    const sheet = { ...filled(50), extraRollhouses: 2 };
+    expect(rollhouseBonus(sheet)).toBe(200);
+    expect(grandTotal(sheet)).toBe(250);
+  });
+});
+
 describe('totals', () => {
   it('treats open categories as zero without crashing', () => {
     const sheet = createEmptyScoreSheet();
@@ -174,7 +241,7 @@ describe('totals', () => {
 
   it('sums upper, bonus and lower', () => {
     const sheet = upperSheet([3, 6, 9, 12, 15, 18]);
-    sheet.yahtzee = 50;
+    sheet.rollhouse = 50;
     sheet.chance = 20;
     expect(lowerTotal(sheet)).toBe(70);
     expect(grandTotal(sheet)).toBe(63 + UPPER_BONUS_POINTS + 70);

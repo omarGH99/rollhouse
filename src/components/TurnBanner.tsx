@@ -9,7 +9,6 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { TOTAL_ROUNDS } from '../logic/scoring';
 import { Accent, fonts, palette, spacing, textGlow } from '../theme';
 import { Player, PlayerIndex } from '../types';
 
@@ -17,6 +16,8 @@ interface Props {
   players: Player[];
   currentPlayer: PlayerIndex;
   round: number;
+  /** How many rounds this game type runs to. */
+  rounds: number;
   accent: Accent;
   /** True while the active seat is a bot taking its turn. */
   aiThinking: boolean;
@@ -26,6 +27,7 @@ export const TurnBanner: React.FC<Props> = ({
   players,
   currentPlayer,
   round,
+  rounds,
   accent,
   aiThinking,
 }) => {
@@ -70,7 +72,7 @@ export const TurnBanner: React.FC<Props> = ({
           {active.kind === 'ai' ? (aiThinking ? 'THINKING' : 'WAITING') : 'YOUR TURN'}
         </Text>
         <Text style={[styles.subtitle, { color: accent.dim }]}>
-          {`· ROUND ${round}/${TOTAL_ROUNDS}`}
+          {`· ROUND ${round}/${rounds}`}
         </Text>
       </View>
 

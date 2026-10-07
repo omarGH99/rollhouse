@@ -20,8 +20,10 @@ interface Props {
   hasRolled: boolean;
   rollNonce: number;
   canRoll: boolean;
-  /** What the dice as they lie would score, per box they may go in. */
-  previews: Partial<Record<Category, number>>;
+  /** What the dice as they lie would score: per scorecard column, per box. */
+  previews: Partial<Record<Category, number>>[];
+  /** What each of those columns is worth. */
+  multipliers: number[];
   /** The device can be shaken to throw, so the copy should say so. */
   shakeSupported: boolean;
   onRoll: () => void;
@@ -64,6 +66,7 @@ export const ThrowScreen: React.FC<Props> = ({
   rollNonce,
   canRoll,
   previews,
+  multipliers,
   shakeSupported,
   onRoll,
   onToggleHold,
@@ -94,9 +97,19 @@ export const ThrowScreen: React.FC<Props> = ({
   const dieSize = Math.min(92, Math.floor((width - spacing(16) - gap * 2) / 3));
   const thrown = MAX_ROLLS - rollsLeft;
 
-  const best = (Object.entries(previews) as [Category, number][])
-    .filter(([, points]) => points > 0)
-    .sort((a, b) => b[1] - a[1])
+  // The best-paying boxes on offer, counting what their column is worth.
+  const best = previews
+    .flatMap((column, i) =>
+      (Object.entries(column) as [Category, number][]).map(([category, points]) => ({
+        key: `${category}:${i}`,
+        label:
+          CATEGORY_LABELS[category] +
+          (multipliers.length > 1 ? ` ×${multipliers[i]}` : ''),
+        points: points * multipliers[i],
+      })),
+    )
+    .filter((option) => option.points > 0)
+    .sort((a, b) => b.points - a.points)
     .slice(0, BEST_SHOWN);
 
   const throwLabel = !hasRolled
@@ -194,10 +207,12 @@ export const ThrowScreen: React.FC<Props> = ({
 
       <View style={styles.footer}>
         <View style={styles.best}>
-          {best.map(([category, points]) => (
-            <View key={category} style={[styles.chip, { borderColor: accent.soft }]}>
-              <Text style={styles.chipLabel}>{CATEGORY_LABELS[category]}</Text>
-              <Text style={[styles.chipPoints, { color: accent.main }]}>{points}</Text>
+          {best.map((option) => (
+            <View key={option.key} style={[styles.chip, { borderColor: accent.soft }]}>
+              <Text style={styles.chipLabel}>{option.label}</Text>
+              <Text style={[styles.chipPoints, { color: accent.main }]}>
+                {option.points}
+              </Text>
             </View>
           ))}
         </View>

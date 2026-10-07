@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import * as Haptics from 'expo-haptics';
 
-import { Category, DieValue, GameState, Player, PlayerIndex } from '../types';
+import { Category, DieValue, GameMode, GameState, Player, PlayerIndex } from '../types';
 import {
   DICE_COUNT,
   GameSession,
@@ -16,8 +16,9 @@ import {
   sessionReducer,
   undoSeat,
 } from '../logic/gameReducer';
-import { chooseCategory, chooseKeep } from '../logic/ai';
-import { grandTotal, previewScores } from '../logic/scoring';
+import { boardFor, planKeep, planScore } from '../logic/ai';
+import { MODES, totalsFor } from '../logic/modes';
+import { previewScores } from '../logic/scoring';
 import { Achievement, Stats, emptyStats, recordGame } from '../logic/stats';
 import {
   clearGame,
@@ -37,8 +38,11 @@ const AI_HANDOFF_MS = 900;
 
 export interface RollhouseGame {
   state: GameState;
-  /** Preview points per open category for the *current* player. */
-  previews: Partial<Record<Category, number>>;
+  /**
+   * What the dice would score for the *current* player, one entry per scorecard
+   * column, each listing only the boxes the rules allow.
+   */
+  previews: Partial<Record<Category, number>>[];
   totals: number[];
   canRoll: boolean;
   canUndo: boolean;
@@ -48,16 +52,18 @@ export interface RollhouseGame {
   aiThinking: boolean;
   /** False until the saved game (if any) has been read from disk. */
   ready: boolean;
+  /** A game has been dealt or restored and is not yet finished. */
+  inProgress: boolean;
   stats: Stats;
   /** Achievements earned by the game that just finished. */
   pendingAchievements: Achievement[];
   acknowledgeAchievements: () => void;
   roll: () => void;
   toggleHold: (dieId: number) => void;
-  score: (category: Category) => void;
+  score: (category: Category, column?: number) => void;
   beginTurn: () => void;
   undo: () => void;
-  newGame: (players: Player[]) => void;
+  newGame: (players: Player[], mode: GameMode) => void;
   reset: () => void;
   resetStats: () => void;
 }
@@ -71,13 +77,20 @@ const notify = (type: Haptics.NotificationFeedbackType) => {
   Haptics.notificationAsync(type).catch(() => {});
 };
 
-export const useRollhouseGame = (): RollhouseGame => {
+/**
+ * `active` is whether the game is on screen. While it is not — the player is
+ * at the menu — bots hold their turns rather than playing on unseen.
+ */
+export const useRollhouseGame = (active = true): RollhouseGame => {
   const [session, dispatch] = useReducer(
     sessionReducer,
     undefined,
     () => createSession(),
   );
   const [ready, setReady] = useState(false);
+  // The session starts out holding a placeholder game, which is not one to
+  // offer "Continue" for.
+  const [started, setStarted] = useState(false);
   const [stats, setStats] = useState<Stats>(emptyStats);
   const [pendingAchievements, setPendingAchievements] = useState<Achievement[]>([]);
 
@@ -98,10 +111,11 @@ export const useRollhouseGame = (): RollhouseGame => {
       if (cancelled) return;
       setStats(savedStats);
       if (saved) {
+        setStarted(true);
         dispatch({ type: 'RESTORE', session: saved });
       } else if (seats) {
         // No game to resume: still seat the same people as last time.
-        dispatch({ type: 'RESET', players: seats });
+        dispatch({ type: 'RESET', players: seats.players, mode: seats.mode });
       }
       setReady(true);
     })();
@@ -148,15 +162,27 @@ export const useRollhouseGame = (): RollhouseGame => {
   /* Derived values                                                          */
   /* ---------------------------------------------------------------------- */
 
-  const previews = useMemo(
-    () =>
-      state.phase === 'turn' && state.hasRolled
-        ? previewScores(state.scores[state.currentPlayer], diceValues(state.dice))
-        : {},
-    [state.phase, state.hasRolled, state.scores, state.currentPlayer, state.dice],
-  );
+  const previews = useMemo(() => {
+    const columns = state.scores[state.currentPlayer];
+    const none: Partial<Record<Category, number>> = {};
+    if (state.phase !== 'turn' || !state.hasRolled) return columns.map(() => none);
+    const dice = diceValues(state.dice);
+    return columns.map((sheet) =>
+      previewScores(sheet, dice, MODES[state.mode].categories),
+    );
+  }, [
+    state.phase,
+    state.hasRolled,
+    state.scores,
+    state.currentPlayer,
+    state.dice,
+    state.mode,
+  ]);
 
-  const totals = useMemo(() => state.scores.map(grandTotal), [state.scores]);
+  const totals = useMemo(
+    () => totalsFor({ scores: state.scores, mode: state.mode }),
+    [state.scores, state.mode],
+  );
 
   const aiTurn = isAiTurn(state);
 
@@ -188,17 +214,17 @@ export const useRollhouseGame = (): RollhouseGame => {
     dispatch({ type: 'TOGGLE_HOLD', dieId });
   }, []);
 
-  const score = useCallback((category: Category) => {
+  const score = useCallback((category: Category, column = 0) => {
     const live = liveRef.current;
-    if (!canScore(live.state, category) || live.aiTurn) return;
+    if (!canScore(live.state, category, column) || live.aiTurn) return;
     // `previews` holds exactly what each legal box would pay, Joker included.
-    const points = live.previews[category] ?? 0;
+    const points = live.previews[column]?.[category] ?? 0;
     notify(
       points > 0
         ? Haptics.NotificationFeedbackType.Success
         : Haptics.NotificationFeedbackType.Warning,
     );
-    dispatch({ type: 'SCORE', category });
+    dispatch({ type: 'SCORE', category, column });
   }, []);
 
   const beginTurn = useCallback(() => {
@@ -211,12 +237,13 @@ export const useRollhouseGame = (): RollhouseGame => {
     dispatch({ type: 'UNDO' });
   }, []);
 
-  const newGame = useCallback((players: Player[]) => {
+  const newGame = useCallback((players: Player[], mode: GameMode) => {
     tap(Haptics.ImpactFeedbackStyle.Medium);
     setPendingAchievements([]);
     recordedRef.current = null;
-    void saveSeats(players);
-    dispatch({ type: 'RESET', players });
+    setStarted(true);
+    void saveSeats(players, mode);
+    dispatch({ type: 'RESET', players, mode });
   }, []);
 
   const reset = useCallback(() => {
@@ -243,11 +270,11 @@ export const useRollhouseGame = (): RollhouseGame => {
    * disagree and strand the game mid-handoff.
    */
   useEffect(() => {
-    if (!ready || state.phase !== 'handoff') return;
+    if (!ready || !active || state.phase !== 'handoff') return;
     if (awaitsTurnStart(state)) return;
     const timer = setTimeout(() => dispatch({ type: 'BEGIN_TURN' }), AI_HANDOFF_MS);
     return () => clearTimeout(timer);
-  }, [ready, state]);
+  }, [ready, active, state]);
 
   /**
    * The bot's hold plan for the dice as they lie. Holds are applied one die per
@@ -255,14 +282,16 @@ export const useRollhouseGame = (): RollhouseGame => {
    * would re-run for each die it touches. Keyed on the faces, not the dice
    * array, because toggling a hold replaces the array but changes no face.
    */
-  const aiSheet = state.scores[state.currentPlayer];
+  const aiColumns = state.scores[state.currentPlayer];
+  const aiLevel = state.players[state.currentPlayer].level ?? 'normal';
   const aiFaces = diceValues(state.dice).join('');
   const aiPlanning = aiTurn && state.hasRolled && state.rollsLeft > 0;
   const aiKeep = useMemo(() => {
     if (!aiPlanning) return null;
     const faces = Array.from(aiFaces, (face) => Number(face) as DieValue);
-    return new Set(chooseKeep(faces, aiSheet).keep);
-  }, [aiPlanning, aiFaces, aiSheet]);
+    const board = boardFor(aiColumns, state.mode);
+    return new Set(planKeep(faces, board, state.rollsLeft, aiLevel).keep);
+  }, [aiPlanning, aiFaces, aiColumns, state.mode, state.rollsLeft, aiLevel]);
 
   /**
    * One scheduled step per render while the bot is on turn. Each step either
@@ -270,15 +299,15 @@ export const useRollhouseGame = (): RollhouseGame => {
    * so the AI is visible on the board rather than resolved instantly.
    */
   useEffect(() => {
-    if (!ready || !aiTurn) return;
+    if (!ready || !active || !aiTurn) return;
 
-    const sheet = state.scores[state.currentPlayer];
     const dice = diceValues(state.dice);
 
     // Out of rolls, or holding everything: commit to a box.
     if (state.hasRolled && (state.rollsLeft === 0 || state.dice.every((d) => d.held))) {
       const timer = setTimeout(() => {
-        dispatch({ type: 'SCORE', category: chooseCategory(dice, sheet) });
+        const board = boardFor(state.scores[state.currentPlayer], state.mode);
+        dispatch({ type: 'SCORE', ...planScore(dice, board, aiLevel) });
       }, AI_THINK_MS);
       return () => clearTimeout(timer);
     }
@@ -304,7 +333,7 @@ export const useRollhouseGame = (): RollhouseGame => {
       mismatch >= 0 ? 220 : AI_ROLL_MS,
     );
     return () => clearTimeout(timer);
-  }, [ready, aiTurn, aiKeep, state]);
+  }, [ready, active, aiTurn, aiKeep, aiLevel, state]);
 
   return {
     state,
@@ -316,6 +345,7 @@ export const useRollhouseGame = (): RollhouseGame => {
     undoPlayer: aiTurn ? null : undoSeat(session),
     aiThinking: aiTurn,
     ready,
+    inProgress: started && state.phase !== 'gameover',
     stats,
     pendingAchievements,
     acknowledgeAchievements,

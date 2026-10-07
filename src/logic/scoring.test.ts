@@ -1,7 +1,6 @@
 import {
   ALL_CATEGORIES,
   LOWER_CATEGORIES,
-  TOTAL_ROUNDS,
   UPPER_BONUS_POINTS,
   UPPER_BONUS_THRESHOLD,
   UPPER_CATEGORIES,
@@ -37,7 +36,6 @@ const upperSheet = (values: number[]): ScoreSheet => {
 describe('structure', () => {
   it('has 13 categories, matching the round count', () => {
     expect(ALL_CATEGORIES).toHaveLength(13);
-    expect(TOTAL_ROUNDS).toBe(13);
     expect(UPPER_CATEGORIES).toHaveLength(6);
     expect(LOWER_CATEGORIES).toHaveLength(7);
   });

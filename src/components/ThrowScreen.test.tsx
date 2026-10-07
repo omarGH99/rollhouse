@@ -19,7 +19,8 @@ const setup = (props: Partial<React.ComponentProps<typeof ThrowScreen>> = {}) =>
       hasRolled={false}
       rollNonce={0}
       canRoll
-      previews={{}}
+      previews={[{}]}
+      multipliers={[1]}
       shakeSupported
       onRoll={jest.fn()}
       onToggleHold={jest.fn()}
@@ -88,13 +89,28 @@ describe('between throws', () => {
   it('shows the best three paying boxes, highest first', () => {
     setup({
       ...rolled,
-      previews: { ones: 1, chance: 15, smallStraight: 30, largeStraight: 40, fullHouse: 0 },
+      previews: [
+        { ones: 1, chance: 15, smallStraight: 30, largeStraight: 40, fullHouse: 0 },
+      ],
     });
     expect(screen.getByText('Large Straight')).toBeTruthy();
     expect(screen.getByText('Small Straight')).toBeTruthy();
     expect(screen.getByText('Chance')).toBeTruthy();
     expect(screen.queryByText('Ones')).toBeNull();
     expect(screen.queryByText('Full House')).toBeNull();
+  });
+
+  it('ranks boxes by what their column makes them worth', () => {
+    setup({
+      ...rolled,
+      multipliers: [1, 2, 3],
+      previews: [{ chance: 20 }, { chance: 20 }, { sixes: 12 }],
+    });
+    // 20, 40 and 36: the x2 Chance leads, then the x3 Sixes.
+    expect(screen.getByText('Chance ×2')).toBeTruthy();
+    expect(screen.getByText('40')).toBeTruthy();
+    expect(screen.getByText('Sixes ×3')).toBeTruthy();
+    expect(screen.getByText('36')).toBeTruthy();
   });
 
   it('leaves for the table to score', () => {

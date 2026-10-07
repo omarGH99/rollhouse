@@ -2,15 +2,16 @@ import {
   Category,
   DieState,
   DieValue,
+  GameMode,
   GameState,
   MAX_PLAYERS,
   MIN_PLAYERS,
   Player,
   PlayerIndex,
 } from '../types';
+import { MODES, roundsFor } from './modes';
 import {
   EXTRA_ROLLHOUSE_BONUS,
-  TOTAL_ROUNDS,
   createEmptyScoreSheet,
   earnsExtraRollhouse,
   isJoker,
@@ -33,7 +34,7 @@ const freshDice = (): DieState[] =>
     held: false,
   }));
 
-export const defaultPlayers = (count = MIN_PLAYERS): Player[] =>
+export const defaultPlayers = (count = 2): Player[] =>
   Array.from({ length: count }, (_, i) => ({
     name: `Player ${i + 1}`,
     kind: 'human' as const,
@@ -41,19 +42,21 @@ export const defaultPlayers = (count = MIN_PLAYERS): Player[] =>
 
 export const createInitialState = (
   players: Player[] = defaultPlayers(),
+  mode: GameMode = 'classic',
 ): GameState => {
   const seats = players.slice(0, MAX_PLAYERS);
   if (seats.length < MIN_PLAYERS) {
-    throw new Error(`A game needs at least ${MIN_PLAYERS} players`);
+    throw new Error(`A game needs at least ${MIN_PLAYERS} player`);
   }
   return {
+    mode,
     players: seats,
     dice: freshDice(),
     rollsLeft: MAX_ROLLS,
     hasRolled: false,
     currentPlayer: 0,
     round: 1,
-    scores: seats.map(() => createEmptyScoreSheet()),
+    scores: seats.map(() => MODES[mode].multipliers.map(() => createEmptyScoreSheet())),
     phase: 'turn',
     incomingPlayer: 0,
     rollNonce: 0,
@@ -72,34 +75,40 @@ export interface GameSession {
   history: GameState[];
 }
 
-export const createSession = (players?: Player[]): GameSession => ({
-  state: createInitialState(players),
+export const createSession = (players?: Player[], mode?: GameMode): GameSession => ({
+  state: createInitialState(players, mode),
   history: [],
 });
 
 export type GameAction =
   | { type: 'ROLL' }
   | { type: 'TOGGLE_HOLD'; dieId: number }
-  | { type: 'SCORE'; category: Category }
+  /** `column` is which of the player's scorecard columns; 0 when there is one. */
+  | { type: 'SCORE'; category: Category; column?: number }
   /** The incoming player tapped "start my turn" on the handoff overlay. */
   | { type: 'BEGIN_TURN' }
   /** Take back the most recent score a person made. */
   | { type: 'UNDO' }
   /** Swap in a session loaded from disk. Session-level only. */
   | { type: 'RESTORE'; session: GameSession }
-  | { type: 'RESET'; players?: Player[] };
+  /** Deal a fresh game; anything omitted carries over from the current one. */
+  | { type: 'RESET'; players?: Player[]; mode?: GameMode };
 
 export const diceValues = (dice: DieState[]): DieValue[] => dice.map((d) => d.value);
 
 export const canRoll = (state: GameState): boolean =>
   state.phase === 'turn' && state.rollsLeft > 0;
 
-export const canScore = (state: GameState, category: Category): boolean =>
-  state.phase === 'turn' &&
-  state.hasRolled &&
-  legalCategories(state.scores[state.currentPlayer], diceValues(state.dice)).includes(
-    category,
-  );
+export const canScore = (state: GameState, category: Category, column = 0): boolean => {
+  if (state.phase !== 'turn' || !state.hasRolled) return false;
+  const sheet = state.scores[state.currentPlayer][column];
+  if (!sheet) return false;
+  return legalCategories(
+    sheet,
+    diceValues(state.dice),
+    MODES[state.mode].categories,
+  ).includes(category);
+};
 
 export const activePlayer = (state: GameState): Player =>
   state.players[state.currentPlayer];
@@ -148,6 +157,14 @@ export const awaitsTurnStart = (state: GameState): boolean =>
   state.phase === 'handoff' &&
   state.players[state.incomingPlayer].kind === 'human';
 
+/** The dice and counters a turn starts with. */
+const freshTurn = () => ({
+  dice: freshDice(),
+  rollsLeft: MAX_ROLLS,
+  hasRolled: false,
+  phase: 'turn' as const,
+});
+
 /** Pure state transition. Illegal actions return the same object reference. */
 export const gameReducer = (state: GameState, action: GameAction): GameState => {
   switch (action.type) {
@@ -179,34 +196,40 @@ export const gameReducer = (state: GameState, action: GameAction): GameState => 
     }
 
     case 'SCORE': {
-      if (!canScore(state, action.category)) return state;
+      const column = action.column ?? 0;
+      if (!canScore(state, action.category, column)) return state;
 
       const player = state.currentPlayer;
       const dice = diceValues(state.dice);
-      const sheet = state.scores[player];
+      const sheet = state.scores[player][column];
       const points = scoreFor(action.category, dice, isJoker(sheet, dice));
       const extra = earnsExtraRollhouse(sheet, dice);
 
-      const scores = state.scores.map((other, i) =>
-        i === player
-          ? {
-              ...other,
-              [action.category]: points,
-              extraRollhouses: other.extraRollhouses + (extra ? 1 : 0),
-            }
-          : other,
+      const scores = state.scores.map((columns, seat) =>
+        seat !== player
+          ? columns
+          : columns.map((other, i) =>
+              i !== column
+                ? other
+                : {
+                    ...other,
+                    [action.category]: points,
+                    extraRollhouses: other.extraRollhouses + (extra ? 1 : 0),
+                  },
+            ),
       );
 
       const isLastPlayerOfRound = player === state.players.length - 1;
-      const isFinalTurn = isLastPlayerOfRound && state.round === TOTAL_ROUNDS;
+      const isFinalTurn = isLastPlayerOfRound && state.round === roundsFor(state.mode);
       const nextPlayer: PlayerIndex = (player + 1) % state.players.length;
 
-      return {
+      const scored: GameState = {
         ...state,
         scores,
         lastScored: {
           player,
           category: action.category,
+          column,
           points,
           bonus: extra ? EXTRA_ROLLHOUSE_BONUS : 0,
         },
@@ -215,23 +238,25 @@ export const gameReducer = (state: GameState, action: GameAction): GameState => 
         // Round advances once the last seat has played.
         round: isLastPlayerOfRound && !isFinalTurn ? state.round + 1 : state.round,
       };
+
+      // Playing alone there is nobody to hand over to, so the next turn simply
+      // begins. `lastScored` is kept, so the box just filled still flashes.
+      const solo = state.players.length === 1 && !isFinalTurn;
+      return solo ? { ...scored, ...freshTurn() } : scored;
     }
 
     case 'BEGIN_TURN': {
       if (state.phase !== 'handoff') return state;
       return {
         ...state,
+        ...freshTurn(),
         currentPlayer: state.incomingPlayer,
-        dice: freshDice(),
-        rollsLeft: MAX_ROLLS,
-        hasRolled: false,
-        phase: 'turn',
         lastScored: null,
       };
     }
 
     case 'RESET':
-      return createInitialState(action.players ?? state.players);
+      return createInitialState(action.players ?? state.players, action.mode ?? state.mode);
 
     default:
       return state;

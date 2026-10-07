@@ -17,7 +17,7 @@ const setup = (props: Partial<React.ComponentProps<typeof HandoffOverlay>> = {})
       incomingPlayer={1}
       completedRound={3}
       roundFullyComplete={false}
-      lastScored={{ player: 0, category: 'chance', points: 21, bonus: 0 }}
+      lastScored={{ player: 0, category: 'chance', column: 0, points: 21, bonus: 0 }}
       passDevice
       undoPlayer={null}
       onBegin={jest.fn()}
@@ -80,9 +80,19 @@ describe('last score', () => {
   });
 
   it('calls out an extra-Rollhouse bonus', () => {
-    setup({ lastScored: { player: 0, category: 'sixes', points: 30, bonus: 100 } });
+    setup({ lastScored: { player: 0, category: 'sixes', column: 0, points: 30, bonus: 100 } });
     expect(screen.getByText('+30')).toBeTruthy();
     expect(screen.getByText('+100 BONUS')).toBeTruthy();
+  });
+
+  it('counts a score at what its column is worth', () => {
+    setup({
+      lastScored: { player: 0, category: 'sixes', column: 2, points: 30, bonus: 100 },
+      multiplier: 3,
+    });
+    expect(screen.getByText(/Sixes\s+×3/)).toBeTruthy();
+    expect(screen.getByText('+90')).toBeTruthy();
+    expect(screen.getByText('+300 BONUS')).toBeTruthy();
   });
 
   it('copes with no score yet', () => {

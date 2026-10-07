@@ -13,11 +13,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CATEGORY_ICONS } from './categoryIcons';
 import { FeltPanel } from './FeltPanel';
 import { DICE_COUNT, MAX_ROLLS } from '../logic/gameReducer';
+import { GAME_MODES, MODES, roundsFor } from '../logic/modes';
 import {
   CATEGORY_LABELS,
   EXTRA_ROLLHOUSE_BONUS,
   LOWER_CATEGORIES,
-  TOTAL_ROUNDS,
   UPPER_BONUS_POINTS,
   UPPER_BONUS_THRESHOLD,
   UPPER_CATEGORIES,
@@ -160,9 +160,8 @@ export const RulesScreen: React.FC<Props> = ({ visible, onClose }) => {
           showsVerticalScrollIndicator={false}
         >
           <Text style={styles.intro}>
-            Two to four players, people or bots, share one device. Over{' '}
-            {TOTAL_ROUNDS} rounds you each fill every box on the scorecard —
-            highest total wins.
+            One to four players, people or bots, share one device. You each fill
+            every box on the scorecard, one per turn — highest total wins.
           </Text>
 
           <Section title="YOUR TURN">
@@ -181,6 +180,27 @@ export const RulesScreen: React.FC<Props> = ({ visible, onClose }) => {
             <Step n={4}>
               Hand the device over. The next player taps in to start their turn.
             </Step>
+          </Section>
+
+          <Section title="GAME TYPES">
+            <FeltPanel style={styles.table} elevation={0}>
+              {GAME_MODES.map((mode) => (
+                <View key={mode} style={styles.ruleRow}>
+                  <View style={styles.ruleTextBlock}>
+                    <Text style={styles.ruleLabel}>{MODES[mode].label}</Text>
+                    <Text style={styles.ruleHint}>{MODES[mode].blurb}</Text>
+                  </View>
+                  <Text style={[styles.rulePoints, styles.rulePointsSoft]}>
+                    {roundsFor(mode)} rounds
+                  </Text>
+                </View>
+              ))}
+            </FeltPanel>
+            <Text style={styles.footnote}>
+              In Marathon each turn you choose a box in any of your three columns.
+              A column's total counts once, twice or three times over, so save
+              your best hands for the ×3.
+            </Text>
           </Section>
 
           <Section title="UPPER SECTION">

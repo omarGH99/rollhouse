@@ -19,23 +19,40 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ActionButton } from './ActionButton';
 import { FeltPanel } from './FeltPanel';
+import { GAME_MODES, MODES, roundsFor } from '../logic/modes';
 import { MAX_NAME_LENGTH } from '../logic/persistence';
 import { accents, fonts, palette, radius, spacing } from '../theme';
-import { MAX_PLAYERS, MIN_PLAYERS, Player, PlayerKind } from '../types';
+import {
+  BotLevel,
+  GameMode,
+  MAX_PLAYERS,
+  MIN_PLAYERS,
+  Player,
+  PlayerKind,
+} from '../types';
 
 interface Props {
   visible: boolean;
   /** Seats to pre-fill, so reopening keeps the previous choices. */
   initialPlayers: Player[];
-  /** Null when there is no game to return to (first launch). */
-  onCancel: (() => void) | null;
-  onStart: (players: Player[]) => void;
+  initialMode: GameMode;
+  /** A game is in progress and dealing will end it. */
+  replacing: boolean;
+  onCancel: () => void;
+  onStart: (players: Player[], mode: GameMode) => void;
 }
 
 const COUNTS = Array.from(
   { length: MAX_PLAYERS - MIN_PLAYERS + 1 },
   (_, i) => MIN_PLAYERS + i,
 );
+
+const LEVELS: BotLevel[] = ['easy', 'normal', 'hard'];
+const LEVEL_LABELS: Record<BotLevel, string> = {
+  easy: 'Easy',
+  normal: 'Normal',
+  hard: 'Hard',
+};
 
 const defaultName = (seat: number, kind: PlayerKind) =>
   kind === 'ai' ? `Bot ${seat + 1}` : `Player ${seat + 1}`;
@@ -50,17 +67,22 @@ const resize = (players: Player[], count: number): Player[] =>
 export const SetupScreen: React.FC<Props> = ({
   visible,
   initialPlayers,
+  initialMode,
+  replacing,
   onCancel,
   onStart,
 }) => {
   const insets = useSafeAreaInsets();
   const [players, setPlayers] = useState<Player[]>(initialPlayers);
+  const [mode, setMode] = useState<GameMode>(initialMode);
   const progress = useSharedValue(0);
 
   // Re-seed whenever the sheet opens, so it reflects the current game.
   useEffect(() => {
-    if (visible) setPlayers(initialPlayers);
-  }, [visible, initialPlayers]);
+    if (!visible) return;
+    setPlayers(initialPlayers);
+    setMode(initialMode);
+  }, [visible, initialPlayers, initialMode]);
 
   useEffect(() => {
     progress.value = withTiming(visible ? 1 : 0, {
@@ -76,35 +98,41 @@ export const SetupScreen: React.FC<Props> = ({
 
   if (!visible) return null;
 
-  const setKind = (seat: number, kind: PlayerKind) => {
+  const patch = (seat: number, change: (player: Player, seat: number) => Player) =>
     setPlayers((current) =>
-      current.map((player, i) => {
-        if (i !== seat) return player;
-        // Only rename when the name was still the default for the old kind,
-        // so a custom name survives toggling human/AI.
-        const wasDefault = player.name === defaultName(i, player.kind);
-        return {
-          kind,
-          name: wasDefault ? defaultName(i, kind) : player.name,
-        };
-      }),
+      current.map((player, i) => (i === seat ? change(player, i) : player)),
     );
-  };
 
-  const setName = (seat: number, name: string) => {
-    setPlayers((current) =>
-      current.map((player, i) => (i === seat ? { ...player, name } : player)),
-    );
-  };
+  const setKind = (seat: number, kind: PlayerKind) =>
+    patch(seat, (player, i) => {
+      // Only rename when the name was still the default for the old kind,
+      // so a custom name survives toggling human/AI.
+      const wasDefault = player.name === defaultName(i, player.kind);
+      return {
+        kind,
+        name: wasDefault ? defaultName(i, kind) : player.name,
+        // A level belongs to a bot; a person's seat carries none.
+        ...(kind === 'ai' ? { level: player.level ?? 'normal' } : {}),
+      };
+    });
 
   /** Names as they will be played: trimmed, and never blank. */
   const seated = (): Player[] =>
     players.map((player, seat) => ({
-      kind: player.kind,
+      ...player,
       name: player.name.trim() || defaultName(seat, player.kind),
     }));
 
   const humanCount = players.filter((p) => p.kind === 'human').length;
+
+  const note =
+    players.length === 1
+      ? 'Playing alone: chase your own high score.'
+      : humanCount === 0
+        ? 'All seats are bots — they will play the game out on their own.'
+        : humanCount === 1
+          ? 'After the bots have played, you tap in to start your turn.'
+          : 'Each turn ends with a pause, so the device can change hands.';
 
   return (
     <View style={[StyleSheet.absoluteFill, styles.root]}>
@@ -114,17 +142,15 @@ export const SetupScreen: React.FC<Props> = ({
       <Animated.View style={[styles.content, style]}>
         <View style={[styles.header, { paddingTop: insets.top + spacing(3) }]}>
           <Text style={styles.title}>New Game</Text>
-          {onCancel ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Cancel"
-              onPress={onCancel}
-              hitSlop={12}
-              style={styles.close}
-            >
-              <Ionicons name="close" size={20} color={palette.text} />
-            </Pressable>
-          ) : null}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Cancel"
+            onPress={onCancel}
+            hitSlop={12}
+            style={styles.close}
+          >
+            <Ionicons name="close" size={20} color={palette.text} />
+          </Pressable>
         </View>
 
         <ScrollView
@@ -136,7 +162,41 @@ export const SetupScreen: React.FC<Props> = ({
           ]}
           showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.sectionTitle}>PLAYERS</Text>
+          <Text style={styles.sectionTitle}>GAME</Text>
+          <View style={styles.modes}>
+            {GAME_MODES.map((option) => {
+              const selected = option === mode;
+              return (
+                <Pressable
+                  key={option}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${MODES[option].label} game`}
+                  accessibilityState={{ selected }}
+                  onPress={() => setMode(option)}
+                  style={[
+                    styles.mode,
+                    selected && {
+                      borderColor: palette.brass,
+                      backgroundColor: accents[0].wash,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.modeName,
+                      { color: selected ? palette.brassBright : palette.textDim },
+                    ]}
+                  >
+                    {MODES[option].label}
+                  </Text>
+                  <Text style={styles.modeRounds}>{roundsFor(option)} rounds</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text style={styles.modeBlurb}>{MODES[mode].blurb}</Text>
+
+          <Text style={[styles.sectionTitle, styles.spaced]}>PLAYERS</Text>
           <View style={styles.countRow}>
             {COUNTS.map((count) => {
               const selected = players.length === count;
@@ -144,7 +204,7 @@ export const SetupScreen: React.FC<Props> = ({
                 <Pressable
                   key={count}
                   accessibilityRole="button"
-                  accessibilityLabel={`${count} players`}
+                  accessibilityLabel={`${count} player${count === 1 ? '' : 's'}`}
                   accessibilityState={{ selected }}
                   onPress={() => setPlayers((cur) => resize(cur, count))}
                   style={[
@@ -168,7 +228,7 @@ export const SetupScreen: React.FC<Props> = ({
             })}
           </View>
 
-          <Text style={[styles.sectionTitle, styles.seatsTitle]}>SEATS</Text>
+          <Text style={[styles.sectionTitle, styles.spaced]}>SEATS</Text>
           {players.map((player, seat) => (
             <FeltPanel
               key={seat}
@@ -178,69 +238,104 @@ export const SetupScreen: React.FC<Props> = ({
               intensity={20}
               elevation={0}
             >
-              <View style={[styles.seatDot, { backgroundColor: accents[seat].main }]} />
-              {/*
-                Wrapped because on web a bare input is not a positioned element,
-                so the panel's absolutely-filled blur and tint paint over it.
-              */}
-              <View style={styles.seatNameWrap}>
-                <TextInput
-                  accessibilityLabel={`Seat ${seat + 1} name`}
-                  value={player.name}
-                  onChangeText={(name) => setName(seat, name)}
-                  placeholder={defaultName(seat, player.kind)}
-                  placeholderTextColor={palette.textFaint}
-                  selectionColor={accents[seat].main}
-                  maxLength={MAX_NAME_LENGTH}
-                  autoCapitalize="words"
-                  autoCorrect={false}
-                  returnKeyType="done"
-                  selectTextOnFocus
-                  style={styles.seatName}
-                />
+              <View style={styles.seatRow}>
+                <View style={[styles.seatDot, { backgroundColor: accents[seat].main }]} />
+                {/*
+                  Wrapped because on web a bare input is not a positioned
+                  element, so the panel's absolutely-filled blur and tint paint
+                  over it.
+                */}
+                <View style={styles.seatNameWrap}>
+                  <TextInput
+                    accessibilityLabel={`Seat ${seat + 1} name`}
+                    value={player.name}
+                    onChangeText={(name) => patch(seat, (p) => ({ ...p, name }))}
+                    placeholder={defaultName(seat, player.kind)}
+                    placeholderTextColor={palette.textFaint}
+                    selectionColor={accents[seat].main}
+                    maxLength={MAX_NAME_LENGTH}
+                    autoCapitalize="words"
+                    autoCorrect={false}
+                    returnKeyType="done"
+                    selectTextOnFocus
+                    style={styles.seatName}
+                  />
+                </View>
+                <View style={styles.kindToggle}>
+                  {(['human', 'ai'] as PlayerKind[]).map((kind) => {
+                    const active = player.kind === kind;
+                    return (
+                      <Pressable
+                        key={kind}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Seat ${seat + 1} ${kind === 'ai' ? 'computer' : 'human'}`}
+                        accessibilityState={{ selected: active }}
+                        onPress={() => setKind(seat, kind)}
+                        style={[
+                          styles.kindButton,
+                          active && {
+                            backgroundColor: accents[seat].soft,
+                            borderColor: accents[seat].main,
+                          },
+                        ]}
+                      >
+                        <Ionicons
+                          name={kind === 'ai' ? 'hardware-chip-outline' : 'person-outline'}
+                          size={15}
+                          color={active ? accents[seat].main : palette.textFaint}
+                        />
+                      </Pressable>
+                    );
+                  })}
+                </View>
               </View>
-              <View style={styles.kindToggle}>
-                {(['human', 'ai'] as PlayerKind[]).map((kind) => {
-                  const active = player.kind === kind;
-                  return (
-                    <Pressable
-                      key={kind}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Seat ${seat + 1} ${kind === 'ai' ? 'computer' : 'human'}`}
-                      accessibilityState={{ selected: active }}
-                      onPress={() => setKind(seat, kind)}
-                      style={[
-                        styles.kindButton,
-                        active && {
-                          backgroundColor: accents[seat].soft,
-                          borderColor: accents[seat].main,
-                        },
-                      ]}
-                    >
-                      <Ionicons
-                        name={kind === 'ai' ? 'hardware-chip-outline' : 'person-outline'}
-                        size={15}
-                        color={active ? accents[seat].main : palette.textFaint}
-                      />
-                    </Pressable>
-                  );
-                })}
-              </View>
+
+              {player.kind === 'ai' ? (
+                <View style={styles.levels}>
+                  {LEVELS.map((level) => {
+                    const active = (player.level ?? 'normal') === level;
+                    return (
+                      <Pressable
+                        key={level}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Seat ${seat + 1} ${LEVEL_LABELS[level]} bot`}
+                        accessibilityState={{ selected: active }}
+                        onPress={() => patch(seat, (p) => ({ ...p, level }))}
+                        style={[
+                          styles.level,
+                          active && {
+                            backgroundColor: accents[seat].soft,
+                            borderColor: accents[seat].main,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.levelText,
+                            { color: active ? accents[seat].main : palette.textFaint },
+                          ]}
+                        >
+                          {LEVEL_LABELS[level]}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : null}
             </FeltPanel>
           ))}
 
-          <Text style={styles.note}>
-            {humanCount === 0
-              ? 'All seats are bots — they will play the game out on their own.'
-              : humanCount === 1
-                ? 'After the bots have played, you tap in to start your turn.'
-                : 'Each turn ends with a pause, so the device can change hands.'}
-          </Text>
+          <Text style={styles.note}>{note}</Text>
+          {replacing ? (
+            <Text style={[styles.note, styles.warning]}>
+              Dealing ends the game you have in progress.
+            </Text>
+          ) : null}
 
           <ActionButton
             label="DEAL"
             accent={accents[0]}
-            onPress={() => onStart(seated())}
+            onPress={() => onStart(seated(), mode)}
             size="lg"
             pulse
             style={styles.cta}
@@ -296,8 +391,40 @@ const styles = StyleSheet.create({
     color: palette.brassBright,
     marginBottom: spacing(3),
   },
-  seatsTitle: {
-    marginTop: spacing(7),
+  spaced: {
+    marginTop: spacing(6),
+  },
+  modes: {
+    flexDirection: 'row',
+    gap: spacing(2.5),
+  },
+  mode: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing(3),
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: palette.hairline,
+    backgroundColor: palette.panel,
+  },
+  modeName: {
+    fontFamily: fonts.display,
+    fontSize: 16,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  modeRounds: {
+    marginTop: spacing(1),
+    fontFamily: fonts.body,
+    fontSize: 10.5,
+    letterSpacing: 0.6,
+    color: palette.textMuted,
+  },
+  modeBlurb: {
+    marginTop: spacing(2.5),
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: palette.textMuted,
   },
   countRow: {
     flexDirection: 'row',
@@ -319,13 +446,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   seat: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing(3),
     paddingVertical: spacing(3),
     paddingHorizontal: spacing(4),
     marginBottom: spacing(2),
     borderRadius: radius.md,
+  },
+  seatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing(3),
   },
   seatDot: {
     width: 10,
@@ -356,6 +485,25 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: palette.hairlineSoft,
   },
+  levels: {
+    flexDirection: 'row',
+    gap: spacing(2),
+    marginTop: spacing(3),
+  },
+  level: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing(1.5),
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: palette.hairlineSoft,
+  },
+  levelText: {
+    fontFamily: fonts.body,
+    fontSize: 11.5,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+  },
   note: {
     fontFamily: fonts.body,
     fontSize: 11.5,
@@ -364,8 +512,12 @@ const styles = StyleSheet.create({
     marginTop: spacing(4),
     textAlign: 'center',
   },
+  warning: {
+    marginTop: spacing(1.5),
+    color: palette.danger,
+  },
   cta: {
-    marginTop: spacing(7),
+    marginTop: spacing(6),
     alignSelf: 'stretch',
   },
 });

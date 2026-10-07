@@ -65,7 +65,6 @@ export const UPPER_BONUS_POINTS = 35;
 export const ROLLHOUSE_POINTS = 50;
 /** Paid for each further Rollhouse once the box holds its 50. */
 export const EXTRA_ROLLHOUSE_BONUS = 100;
-export const TOTAL_ROUNDS = ALL_CATEGORIES.length; // 13
 
 export const createEmptyScoreSheet = (): ScoreSheet =>
   ALL_CATEGORIES.reduce(
@@ -174,8 +173,13 @@ export const earnsExtraRollhouse = (sheet: ScoreSheet, dice: DieValue[]): boolea
  * forced: the upper box matching its face if that is open; failing that any
  * open lower box; failing that an open upper box, where it scores nothing.
  */
-export const legalCategories = (sheet: ScoreSheet, dice: DieValue[]): Category[] => {
-  const open = ALL_CATEGORIES.filter((c) => sheet[c] === null);
+export const legalCategories = (
+  sheet: ScoreSheet,
+  dice: DieValue[],
+  /** The boxes in play; a game type may use only some of them. */
+  categories: Category[] = ALL_CATEGORIES,
+): Category[] => {
+  const open = categories.filter((c) => sheet[c] === null);
   if (!isJoker(sheet, dice)) return open;
 
   const matching = UPPER_BOX[dice[0]];
@@ -228,10 +232,11 @@ export const scoreFor = (
 export const previewScores = (
   sheet: ScoreSheet,
   dice: DieValue[],
+  categories: Category[] = ALL_CATEGORIES,
 ): Partial<Record<Category, number>> => {
   const preview: Partial<Record<Category, number>> = {};
   const joker = isJoker(sheet, dice);
-  for (const category of legalCategories(sheet, dice)) {
+  for (const category of legalCategories(sheet, dice, categories)) {
     preview[category] = scoreFor(category, dice, joker);
   }
   return preview;
@@ -262,5 +267,7 @@ export const rollhouseBonus = (sheet: ScoreSheet): number =>
 export const grandTotal = (sheet: ScoreSheet): number =>
   upperTotal(sheet) + lowerTotal(sheet) + rollhouseBonus(sheet);
 
-export const isSheetComplete = (sheet: ScoreSheet): boolean =>
-  ALL_CATEGORIES.every((c) => sheet[c] !== null);
+export const isSheetComplete = (
+  sheet: ScoreSheet,
+  categories: Category[] = ALL_CATEGORIES,
+): boolean => categories.every((c) => sheet[c] !== null);

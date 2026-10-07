@@ -9,7 +9,7 @@ import {
   winningSeats,
 } from './stats';
 import { ALL_CATEGORIES, UPPER_CATEGORIES, createEmptyScoreSheet } from './scoring';
-import { GameState, Player, ScoreSheet } from '../types';
+import { GameMode, GameState, Player, ScoreSheet } from '../types';
 
 /** A completed sheet whose grand total is exactly `target` (via chance/rollhouse). */
 const sheetScoring = (overrides: Partial<ScoreSheet> = {}): ScoreSheet => {
@@ -23,6 +23,7 @@ const sheetScoring = (overrides: Partial<ScoreSheet> = {}): ScoreSheet => {
 const finishedGame = (
   players: Player[],
   sheets: ScoreSheet[],
+  mode: GameMode = 'classic',
 ): GameState => ({
   players,
   dice: [],
@@ -30,7 +31,8 @@ const finishedGame = (
   hasRolled: true,
   currentPlayer: 0,
   round: 13,
-  scores: sheets,
+  mode,
+  scores: sheets.map((sheet) => [sheet]),
   phase: 'gameover',
   incomingPlayer: 0,
   rollNonce: 0,
@@ -42,19 +44,11 @@ const bot: Player = { name: 'Bot', kind: 'ai' };
 
 describe('winningSeats', () => {
   it('returns the single top seat', () => {
-    const seats = winningSeats([
-      sheetScoring({ chance: 10 }),
-      sheetScoring({ chance: 30 }),
-    ]);
-    expect(seats).toEqual([1]);
+    expect(winningSeats([10, 30])).toEqual([1]);
   });
 
   it('returns every seat on a tie', () => {
-    const seats = winningSeats([
-      sheetScoring({ chance: 20 }),
-      sheetScoring({ chance: 20 }),
-    ]);
-    expect(seats).toEqual([0, 1]);
+    expect(winningSeats([20, 20])).toEqual([0, 1]);
   });
 });
 
@@ -145,6 +139,24 @@ describe('recordGame', () => {
       [sheetScoring({ rollhouse: 50, extraRollhouses: 2 }), sheetScoring()],
     );
     expect(recordGame(emptyStats(), game).stats.rollhouses).toBe(3);
+  });
+
+  it('keeps best and average for Classic games only', () => {
+    const quick = finishedGame([human, bot], [sheetScoring({ sixes: 30 }), sheetScoring()], 'quick');
+    const { stats } = recordGame(emptyStats(), quick);
+    expect(stats.gamesPlayed).toBe(1);
+    expect(stats.humanWins).toBe(1);
+    expect(stats.bestScore).toBe(0);
+    expect(stats.scoredGames).toBe(0);
+  });
+
+  it('counts a solo game as played, but not as a win', () => {
+    const solo = finishedGame([human], [sheetScoring({ chance: 25 })]);
+    const { stats, newlyUnlocked } = recordGame(emptyStats(), solo);
+    expect(stats.gamesPlayed).toBe(1);
+    expect(stats.humanWins).toBe(0);
+    expect(stats.bestScore).toBe(25);
+    expect(newlyUnlocked.map((a) => a.id)).not.toContain('first-win');
   });
 
   it('counts the upper bonus when it is earned', () => {

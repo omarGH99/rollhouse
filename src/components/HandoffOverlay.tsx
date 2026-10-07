@@ -24,6 +24,8 @@ interface Props {
   /** True once every seat has taken its turn in that round. */
   roundFullyComplete: boolean;
   lastScored: LastScored | null;
+  /** What the column that score went in is worth; 1 unless the card has several. */
+  multiplier?: number;
   /** More than one human seat, so the device physically changes hands. */
   passDevice: boolean;
   /** Whose score undo would take back; null hides the control. */
@@ -51,6 +53,7 @@ export const HandoffOverlay: React.FC<Props> = ({
   completedRound,
   roundFullyComplete,
   lastScored,
+  multiplier = 1,
   passDevice,
   undoPlayer,
   onBegin,
@@ -108,6 +111,7 @@ export const HandoffOverlay: React.FC<Props> = ({
               style={[styles.lastScoreLabel, { color: accents[lastScored.player].dim }]}
             >
               {players[lastScored.player].name} · {CATEGORY_LABELS[lastScored.category]}
+              {multiplier > 1 ? ` ×${multiplier}` : ''}
             </Text>
             <Text
               style={[
@@ -121,11 +125,11 @@ export const HandoffOverlay: React.FC<Props> = ({
                 lastScored.points > 0 && textGlow(accents[lastScored.player].main, 6),
               ]}
             >
-              +{lastScored.points}
+              +{lastScored.points * multiplier}
             </Text>
             {lastScored.bonus > 0 ? (
               <Text style={[styles.lastScoreBonus, { color: palette.brassBright }]}>
-                +{lastScored.bonus} BONUS
+                +{lastScored.bonus * multiplier} BONUS
               </Text>
             ) : null}
           </View>

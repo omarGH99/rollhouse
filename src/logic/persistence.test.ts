@@ -1,6 +1,7 @@
 import {
   SAVE_VERSION,
   SEATS_VERSION,
+  deserializeLastMode,
   deserializePlayers,
   deserializeSession,
   serializePlayers,
@@ -100,9 +101,21 @@ describe('rejects unusable saves', () => {
 
   it.each([
     ['no players', (s: Record<string, unknown>) => { s.players = []; }],
-    ['one player', (s: Record<string, unknown>) => {
-      s.players = [{ name: 'a', kind: 'human' }];
-      s.scores = [s.scores as unknown[]].flat().slice(0, 1);
+    ['too many players', (s: Record<string, unknown>) => {
+      const seat = { name: 'x', kind: 'human' };
+      s.players = [seat, seat, seat, seat, seat];
+      s.scores = Array.from({ length: 5 }, () => (s.scores as unknown[])[0]);
+    }],
+    ['unknown game type', (s: Record<string, unknown>) => { s.mode = 'endless'; }],
+    ['missing game type', (s: Record<string, unknown>) => { delete s.mode; }],
+    ['wrong column count for the game type', (s: Record<string, unknown>) => {
+      s.mode = 'marathon';
+    }],
+    ['bad bot level', (s: Record<string, unknown>) => {
+      (s.players as { level?: string }[])[0].level = 'godlike';
+    }],
+    ['lastScored column out of range', (s: Record<string, unknown>) => {
+      s.lastScored = { player: 0, category: 'chance', column: 1, points: 5, bonus: 0 };
     }],
     ['seat count mismatch', (s: Record<string, unknown>) => {
       (s.players as unknown[]).push({ name: 'c', kind: 'human' });
@@ -131,7 +144,7 @@ describe('rejects unusable saves', () => {
       s.lastScored = { player: 0, category: 'nonsense', points: 5 };
     }],
     ['score sheet with a bad cell', (s: Record<string, unknown>) => {
-      (s.scores as Record<string, unknown>[])[0].ones = 'lots';
+      (s.scores as Record<string, unknown>[][])[0][0].ones = 'lots';
     }],
     ['score sheet missing entirely', (s: Record<string, unknown>) => {
       s.scores = [null, null];
@@ -152,17 +165,33 @@ describe('resuming a restored game', () => {
       category: 'chance',
     });
     expect(next.phase).toBe('handoff');
-    expect(next.scores[0].chance).not.toBeNull();
+    expect(next.scores[0][0].chance).not.toBeNull();
   });
 });
 
 describe('saves from before the rename', () => {
   const LEGACY_BOX = 'yahtzee';
 
+  /** Undo what v3 added: one sheet per seat, no game type, no column. */
+  const asV2State = (state: Record<string, unknown>) => {
+    state.scores = (state.scores as unknown[][]).map((card) => card[0]);
+    delete state.mode;
+    if (state.lastScored) delete (state.lastScored as Record<string, unknown>).column;
+  };
+
+  /** A current save rewritten into the v2 shape. */
+  const asV2 = (session: ReturnType<typeof createSession>): string => {
+    const parsed = JSON.parse(serializeSession(session));
+    parsed.version = 2;
+    asV2State(parsed.state);
+    return JSON.stringify(parsed);
+  };
+
   /** A current save rewritten into the v1 shape. */
   const asV1 = (session: ReturnType<typeof createSession>): string => {
     const parsed = JSON.parse(serializeSession(session));
     parsed.version = 1;
+    asV2State(parsed.state);
     parsed.state.scores.forEach((sheet: Record<string, unknown>) => {
       sheet[LEGACY_BOX] = sheet.rollhouse;
       delete sheet.rollhouse;
@@ -191,14 +220,52 @@ describe('saves from before the rename', () => {
     const restored = deserializeSession(asV1(session));
     expect(restored).not.toBeNull();
     expect(restored!.state).toEqual(session.state);
-    expect(restored!.state.scores[0].rollhouse).toBe(50);
-    expect(restored!.state.scores[0].extraRollhouses).toBe(0);
+    expect(restored!.state.scores[0][0].rollhouse).toBe(50);
+    expect(restored!.state.scores[0][0].extraRollhouses).toBe(0);
     expect(restored!.state.lastScored?.category).toBe('rollhouse');
+  });
+
+  it('resumes a v2 game as a Classic one', () => {
+    let session = createSession(defaultPlayers(3));
+    session = sessionReducer(session, { type: 'ROLL' });
+    session = sessionReducer(session, { type: 'SCORE', category: 'chance' });
+
+    const restored = deserializeSession(asV2(session));
+    expect(restored).not.toBeNull();
+    expect(restored!.state).toEqual(session.state);
+    expect(restored!.state.mode).toBe('classic');
+    expect(restored!.state.lastScored?.column).toBe(0);
   });
 
   it('still rejects a v1 save that is otherwise broken', () => {
     const parsed = JSON.parse(asV1(createSession()));
     parsed.state.scores = 'nope';
+    expect(deserializeSession(JSON.stringify(parsed))).toBeNull();
+  });
+});
+
+describe('game types and solo', () => {
+  it.each(['quick', 'marathon'] as const)('round-trips a %s game', (mode) => {
+    let session = createSession(defaultPlayers(2), mode);
+    session = sessionReducer(session, { type: 'ROLL' });
+    const restored = deserializeSession(serializeSession(session));
+    expect(restored!.state).toEqual(session.state);
+  });
+
+  it('round-trips a solo game and a bot level', () => {
+    const solo = createSession(defaultPlayers(1));
+    expect(deserializeSession(serializeSession(solo))!.state).toEqual(solo.state);
+
+    const table = createSession([
+      { name: 'You', kind: 'human' },
+      { name: 'Bot', kind: 'ai', level: 'hard' },
+    ]);
+    expect(deserializeSession(serializeSession(table))!.state.players[1].level).toBe('hard');
+  });
+
+  it('refuses a round past the end of a short game', () => {
+    const parsed = JSON.parse(serializeSession(createSession(defaultPlayers(2), 'quick')));
+    parsed.state.round = 7;
     expect(deserializeSession(JSON.stringify(parsed))).toBeNull();
   });
 });
@@ -222,10 +289,24 @@ describe('remembered seats', () => {
     ).toBeNull();
   });
 
+  it('remembers the game type and bot levels alongside the seats', () => {
+    const table = [seats[0], { ...seats[1], level: 'easy' as const }];
+    const raw = serializePlayers(table, 'marathon');
+    expect(deserializePlayers(raw)).toEqual(table);
+    expect(deserializeLastMode(raw)).toBe('marathon');
+  });
+
+  it('falls back to Classic when no game type was saved', () => {
+    expect(deserializeLastMode(null)).toBe('classic');
+    expect(deserializeLastMode('{ broken')).toBe('classic');
+    expect(deserializeLastMode(JSON.stringify({ mode: 'endless' }))).toBe('classic');
+  });
+
   it('rejects a bad seat or an impossible table size', () => {
     const wrap = (players: unknown) =>
       JSON.stringify({ version: SEATS_VERSION, players });
-    expect(deserializePlayers(wrap([seats[0]]))).toBeNull();
+    expect(deserializePlayers(wrap([]))).toBeNull();
+    expect(deserializePlayers(wrap([seats[0]]))).toEqual([seats[0]]);
     expect(deserializePlayers(wrap([seats[0], { name: 7, kind: 'human' }]))).toBeNull();
     expect(deserializePlayers(wrap([seats[0], { name: 'X', kind: 'cat' }]))).toBeNull();
   });

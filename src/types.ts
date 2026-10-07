@@ -31,15 +31,26 @@ export type ScoreSheet = Record<Category, number | null> & {
 /** Seat index, `0 .. players.length - 1`. */
 export type PlayerIndex = number;
 
-export const MIN_PLAYERS = 2;
+/** One seat is a solo game, played for a high score. */
+export const MIN_PLAYERS = 1;
 export const MAX_PLAYERS = 4;
 
 export type PlayerKind = 'human' | 'ai';
 
+/** How well a bot seat plays. Absent means `normal`. */
+export type BotLevel = 'easy' | 'normal' | 'hard';
+
 export interface Player {
   name: string;
   kind: PlayerKind;
+  level?: BotLevel;
 }
+
+/**
+ * Which game is being played. The rules each one implies — which boxes, how
+ * many scorecard columns, how long — live in `logic/modes.ts`.
+ */
+export type GameMode = 'quick' | 'classic' | 'marathon';
 
 export type Phase =
   /** Active player is rolling / choosing a category. */
@@ -51,24 +62,30 @@ export type Phase =
 export interface LastScored {
   player: PlayerIndex;
   category: Category;
-  /** Points written in the box. */
+  /** Which of the player's scorecard columns it went in. */
+  column: number;
+  /** Points written in the box, before any column multiplier. */
   points: number;
   /** Extra-Rollhouse bonus earned by the same roll, or 0. */
   bonus: number;
 }
 
 export interface GameState {
-  /** Seats, in turn order. Length is 2-4 and fixed for the game. */
+  mode: GameMode;
+  /** Seats, in turn order. Length is 1-4 and fixed for the game. */
   players: Player[];
   dice: DieState[];
   rollsLeft: number;
   /** False until the active player's first roll of the turn. */
   hasRolled: boolean;
   currentPlayer: PlayerIndex;
-  /** 1-13. Each round = one turn for every player. */
+  /** From 1. Each round = one turn for every player. */
   round: number;
-  /** One sheet per seat, parallel to `players`. */
-  scores: ScoreSheet[];
+  /**
+   * `scores[seat][column]`. Most games have a single column per seat; Marathon
+   * has three, each worth a different multiple.
+   */
+  scores: ScoreSheet[][];
   phase: Phase;
   /** Who the handoff overlay is waiting on. */
   incomingPlayer: PlayerIndex;

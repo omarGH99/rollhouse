@@ -16,14 +16,15 @@ import {
   sessionReducer,
   undoSeat,
 } from './gameReducer';
-import { ALL_CATEGORIES, TOTAL_ROUNDS, isSheetComplete } from './scoring';
-import { Category, GameState, Player } from '../types';
+import { roundsFor, totalsFor } from './modes';
+import { ALL_CATEGORIES, UPPER_CATEGORIES, isSheetComplete } from './scoring';
+import { Category, DieValue, GameState, Player, ScoreSheet } from '../types';
 
 const humans = (n: number): Player[] => defaultPlayers(n);
 
 /** First category still open for the active player. */
 const firstOpen = (state: GameState): Category =>
-  ALL_CATEGORIES.find((c) => state.scores[state.currentPlayer][c] === null)!;
+  ALL_CATEGORIES.find((c) => state.scores[state.currentPlayer][0][c] === null)!;
 
 /** Roll, then score the first open box. */
 const playTurn = (state: GameState): GameState => {
@@ -56,11 +57,16 @@ describe('createInitialState', () => {
     const state = createInitialState(humans(n));
     expect(state.players).toHaveLength(n);
     expect(state.scores).toHaveLength(n);
-    expect(state.scores.every((s) => !isSheetComplete(s))).toBe(true);
+    expect(state.scores.every((card) => card.length === 1)).toBe(true);
+    expect(state.scores.every(([sheet]) => !isSheetComplete(sheet))).toBe(true);
   });
 
-  it('rejects a single-player game', () => {
-    expect(() => createInitialState(humans(1))).toThrow(/at least 2/);
+  it('seats a single player, for a solo game', () => {
+    expect(createInitialState(humans(1)).players).toHaveLength(1);
+  });
+
+  it('rejects an empty table', () => {
+    expect(() => createInitialState([])).toThrow(/at least 1/);
   });
 
   it('caps seats at four', () => {
@@ -69,9 +75,9 @@ describe('createInitialState', () => {
 
   it('gives each player an independent sheet', () => {
     const state = createInitialState(humans(3));
-    state.scores[0].ones = 3;
-    expect(state.scores[1].ones).toBeNull();
-    expect(state.scores[2].ones).toBeNull();
+    state.scores[0][0].ones = 3;
+    expect(state.scores[1][0].ones).toBeNull();
+    expect(state.scores[2][0].ones).toBeNull();
   });
 
   it('deals five dice and a full set of rolls', () => {
@@ -207,9 +213,9 @@ describe('full games', () => {
   it.each([2, 3, 4])('a %i-player game ends with every sheet complete', (n) => {
     const final = playOut(createInitialState(humans(n)));
     expect(final.phase).toBe('gameover');
-    expect(final.round).toBe(TOTAL_ROUNDS);
+    expect(final.round).toBe(roundsFor('classic'));
     expect(final.scores).toHaveLength(n);
-    expect(final.scores.every(isSheetComplete)).toBe(true);
+    expect(final.scores.every(([sheet]) => isSheetComplete(sheet))).toBe(true);
   });
 
   it('does not hand off after the final turn', () => {
@@ -287,7 +293,7 @@ describe('undo', () => {
 
     session = sessionReducer(session, { type: 'UNDO' });
     expect(session.state).toEqual(before);
-    expect(session.state.scores[0].chance).toBeNull();
+    expect(session.state.scores[0][0].chance).toBeNull();
     expect(session.state.phase).toBe('turn');
     expect(canUndo(session)).toBe(false);
   });
@@ -460,12 +466,12 @@ describe('turn handoff', () => {
 
 describe('extra Rollhouses', () => {
   /** A live turn showing five of `face`, with `sheet` as the active card. */
-  const holding = (face: 1 | 2 | 3 | 4 | 5 | 6, sheet: Partial<GameState['scores'][0]>) => {
+  const holding = (face: 1 | 2 | 3 | 4 | 5 | 6, sheet: Partial<ScoreSheet>): GameState => {
     const state = gameReducer(createInitialState(), { type: 'ROLL' });
     return {
       ...state,
       dice: state.dice.map((die) => ({ ...die, value: face })),
-      scores: state.scores.map((s, i) => (i === 0 ? { ...s, ...sheet } : s)),
+      scores: state.scores.map((card, i) => (i === 0 ? [{ ...card[0], ...sheet }] : card)),
     };
   };
 
@@ -474,12 +480,13 @@ describe('extra Rollhouses', () => {
       type: 'SCORE',
       category: 'sixes',
     });
-    expect(next.scores[0].sixes).toBe(30);
-    expect(next.scores[0].extraRollhouses).toBe(1);
-    expect(next.scores[1].extraRollhouses).toBe(0);
+    expect(next.scores[0][0].sixes).toBe(30);
+    expect(next.scores[0][0].extraRollhouses).toBe(1);
+    expect(next.scores[1][0].extraRollhouses).toBe(0);
     expect(next.lastScored).toEqual({
       player: 0,
       category: 'sixes',
+      column: 0,
       points: 30,
       bonus: 100,
     });
@@ -496,8 +503,8 @@ describe('extra Rollhouses', () => {
       type: 'SCORE',
       category: 'largeStraight',
     });
-    expect(next.scores[0].largeStraight).toBe(40);
-    expect(next.scores[0].extraRollhouses).toBe(1);
+    expect(next.scores[0][0].largeStraight).toBe(40);
+    expect(next.scores[0][0].extraRollhouses).toBe(1);
   });
 
   it('gives no bonus after a zeroed Rollhouse box, but still plays as a Joker', () => {
@@ -505,14 +512,141 @@ describe('extra Rollhouses', () => {
       type: 'SCORE',
       category: 'fullHouse',
     });
-    expect(next.scores[0].fullHouse).toBe(25);
-    expect(next.scores[0].extraRollhouses).toBe(0);
+    expect(next.scores[0][0].fullHouse).toBe(25);
+    expect(next.scores[0][0].extraRollhouses).toBe(0);
     expect(next.lastScored?.bonus).toBe(0);
   });
 
   it('scores the first Rollhouse normally, with no bonus', () => {
     const next = gameReducer(holding(6, {}), { type: 'SCORE', category: 'rollhouse' });
-    expect(next.scores[0].rollhouse).toBe(50);
-    expect(next.scores[0].extraRollhouses).toBe(0);
+    expect(next.scores[0][0].rollhouse).toBe(50);
+    expect(next.scores[0][0].extraRollhouses).toBe(0);
+  });
+});
+
+describe('game types', () => {
+  /** Roll, then take the first open box in the first column that has one. */
+  const playAnyTurn = (state: GameState): GameState => {
+    const rolled = gameReducer(state, { type: 'ROLL' });
+    const card = rolled.scores[rolled.currentPlayer];
+    for (let column = 0; column < card.length; column += 1) {
+      const category = ALL_CATEGORIES.find((c) => canScore(rolled, c, column));
+      if (category) return gameReducer(rolled, { type: 'SCORE', category, column });
+    }
+    throw new Error('no legal box');
+  };
+
+  const finish = (start: GameState): GameState => {
+    let state = start;
+    for (let guard = 0; state.phase !== 'gameover' && guard < 2000; guard += 1) {
+      state =
+        state.phase === 'handoff'
+          ? gameReducer(state, { type: 'BEGIN_TURN' })
+          : playAnyTurn(state);
+    }
+    return state;
+  };
+
+  it('deals one column for Quick and Classic, three for Marathon', () => {
+    expect(createInitialState(humans(2), 'quick').scores[0]).toHaveLength(1);
+    expect(createInitialState(humans(2), 'classic').scores[0]).toHaveLength(1);
+    expect(createInitialState(humans(2), 'marathon').scores[0]).toHaveLength(3);
+  });
+
+  it('plays Quick over the six upper boxes only', () => {
+    const rolled = gameReducer(createInitialState(humans(2), 'quick'), { type: 'ROLL' });
+    expect(canScore(rolled, 'sixes')).toBe(true);
+    expect(canScore(rolled, 'chance')).toBe(false);
+    expect(gameReducer(rolled, { type: 'SCORE', category: 'chance' })).toBe(rolled);
+
+    const final = finish(createInitialState(humans(2), 'quick'));
+    expect(final.round).toBe(6);
+    expect(final.scores.every(([sheet]) => isSheetComplete(sheet, UPPER_CATEGORIES))).toBe(
+      true,
+    );
+    expect(final.scores.every(([sheet]) => sheet.chance === null)).toBe(true);
+  });
+
+  it('plays Marathon to 39 rounds, filling all three columns', () => {
+    const final = finish(createInitialState(humans(2), 'marathon'));
+    expect(final.round).toBe(39);
+    expect(final.scores.flat().every((sheet) => isSheetComplete(sheet))).toBe(true);
+  });
+
+  it('scores into the chosen Marathon column and counts it at its worth', () => {
+    const rolled = gameReducer(createInitialState(humans(2), 'marathon'), { type: 'ROLL' });
+    const state: GameState = {
+      ...rolled,
+      dice: rolled.dice.map((die) => ({ ...die, value: 4 as DieValue })),
+    };
+    const next = gameReducer(state, { type: 'SCORE', category: 'chance', column: 2 });
+    expect(next.scores[0][2].chance).toBe(20);
+    expect(next.scores[0][0].chance).toBeNull();
+    expect(next.lastScored?.column).toBe(2);
+    expect(totalsFor(next)).toEqual([60, 0]);
+  });
+
+  it('judges a Joker by the column it is scored in', () => {
+    const rolled = gameReducer(createInitialState(humans(2), 'marathon'), { type: 'ROLL' });
+    const state: GameState = {
+      ...rolled,
+      dice: rolled.dice.map((die) => ({ ...die, value: 6 as DieValue })),
+      scores: rolled.scores.map((card, seat) =>
+        seat === 0 ? [{ ...card[0], rollhouse: 50, sixes: 18 }, card[1], card[2]] : card,
+      ),
+    };
+    // Column 0 holds a Rollhouse, so there it is a Joker and a straight pays.
+    expect(canScore(state, 'largeStraight', 0)).toBe(true);
+    const joker = gameReducer(state, { type: 'SCORE', category: 'largeStraight', column: 0 });
+    expect(joker.scores[0][0].largeStraight).toBe(40);
+    expect(joker.scores[0][0].extraRollhouses).toBe(1);
+
+    // Column 1 has none yet: an ordinary hand, and no straight in five sixes.
+    const plain = gameReducer(state, { type: 'SCORE', category: 'largeStraight', column: 1 });
+    expect(plain.scores[0][1].largeStraight).toBe(0);
+    expect(plain.scores[0][1].extraRollhouses).toBe(0);
+  });
+
+  it('rejects a column the card does not have', () => {
+    const rolled = gameReducer(createInitialState(), { type: 'ROLL' });
+    expect(gameReducer(rolled, { type: 'SCORE', category: 'chance', column: 1 })).toBe(rolled);
+  });
+
+  it('keeps the game type across a reset, unless a new one is given', () => {
+    const quick = createInitialState(humans(2), 'quick');
+    expect(gameReducer(quick, { type: 'RESET' }).mode).toBe('quick');
+    expect(gameReducer(quick, { type: 'RESET', mode: 'marathon' }).mode).toBe('marathon');
+  });
+});
+
+describe('solo play', () => {
+  it('goes straight to the next turn, with no handoff', () => {
+    const rolled = gameReducer(createInitialState(humans(1)), { type: 'ROLL' });
+    const next = gameReducer(rolled, { type: 'SCORE', category: 'chance' });
+    expect(next.phase).toBe('turn');
+    expect(next.round).toBe(2);
+    expect(next.currentPlayer).toBe(0);
+    expect(next.hasRolled).toBe(false);
+    expect(next.rollsLeft).toBe(3);
+    expect(next.dice.every((die) => !die.held)).toBe(true);
+    // Kept, so the table can still show which box was just filled.
+    expect(next.lastScored?.category).toBe('chance');
+  });
+
+  it('ends after the last box like any other game', () => {
+    let state = createInitialState(humans(1), 'quick');
+    for (let turn = 0; turn < 6; turn += 1) state = playTurn(state);
+    expect(state.phase).toBe('gameover');
+    expect(state.round).toBe(6);
+  });
+
+  it('can still take back the last score', () => {
+    let session = createSession(humans(1));
+    session = sessionReducer(session, { type: 'ROLL' });
+    const before = session.state;
+    session = sessionReducer(session, { type: 'SCORE', category: 'chance' });
+    expect(canUndo(session)).toBe(true);
+    session = sessionReducer(session, { type: 'UNDO' });
+    expect(session.state).toBe(before);
   });
 });

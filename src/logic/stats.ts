@@ -1,5 +1,6 @@
-import { GameState, ScoreSheet } from '../types';
-import { ROLLHOUSE_POINTS, grandTotal, upperBonus } from './scoring';
+import { GameState } from '../types';
+import { totalsFor } from './modes';
+import { ROLLHOUSE_POINTS, upperBonus } from './scoring';
 
 export const STATS_VERSION = 2;
 
@@ -104,8 +105,7 @@ export const ACHIEVEMENTS: Achievement[] = [
 ];
 
 /** Winning seats — plural, since a tie has more than one. */
-export const winningSeats = (scores: ScoreSheet[]): number[] => {
-  const totals = scores.map(grandTotal);
+export const winningSeats = (totals: number[]): number[] => {
   const best = Math.max(...totals);
   return totals.reduce<number[]>(
     (seats, total, i) => (total === best ? [...seats, i] : seats),
@@ -124,8 +124,10 @@ export interface RecordResult {
  * result. Safe to call only on a completed game.
  */
 export const recordGame = (stats: Stats, state: GameState): RecordResult => {
-  const totals = state.scores.map(grandTotal);
-  const winners = winningSeats(state.scores);
+  const totals = totalsFor(state);
+  const winners = winningSeats(totals);
+  // Topping a table of one is not a win, and losing to nobody is not a loss.
+  const contested = state.players.length > 1;
 
   const humanSeats = state.players
     .map((p, i) => (p.kind === 'human' ? i : -1))
@@ -134,26 +136,24 @@ export const recordGame = (stats: Stats, state: GameState): RecordResult => {
     .map((p, i) => (p.kind === 'ai' ? i : -1))
     .filter((i) => i >= 0);
 
-  const humanWon = winners.some((seat) => humanSeats.includes(seat));
-  const aiWon = winners.some((seat) => aiSeats.includes(seat));
+  const humanWon = contested && winners.some((seat) => humanSeats.includes(seat));
+  const aiWon = contested && winners.some((seat) => aiSeats.includes(seat));
 
   // Player-facing figures track the best human seat; an all-AI game contributes
-  // nothing to "your" score history.
+  // nothing to "your" score history. They are kept for Classic only: a Quick
+  // total would drag the average down and a Marathon one would bury the best.
   const humanTotals = humanSeats.map((seat) => totals[seat]);
-  const bestHuman = humanTotals.length ? Math.max(...humanTotals) : null;
+  const bestHuman =
+    state.mode === 'classic' && humanTotals.length ? Math.max(...humanTotals) : null;
 
-  const rollhouses = state.scores.reduce(
-    (n, sheet, seat) =>
-      humanSeats.includes(seat)
-        ? n + (sheet.rollhouse === ROLLHOUSE_POINTS ? 1 : 0) + sheet.extraRollhouses
-        : n,
+  // Every column of every human seat's card.
+  const humanSheets = humanSeats.flatMap((seat) => state.scores[seat]);
+  const rollhouses = humanSheets.reduce(
+    (n, sheet) =>
+      n + (sheet.rollhouse === ROLLHOUSE_POINTS ? 1 : 0) + sheet.extraRollhouses,
     0,
   );
-  const bonuses = state.scores.reduce(
-    (n, sheet, seat) =>
-      humanSeats.includes(seat) && upperBonus(sheet) > 0 ? n + 1 : n,
-    0,
-  );
+  const bonuses = humanSheets.filter((sheet) => upperBonus(sheet) > 0).length;
 
   const next: Stats = {
     ...stats,

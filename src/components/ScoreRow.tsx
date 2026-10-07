@@ -19,16 +19,34 @@ import {
   fonts,
   palette,
   radius,
-  seatAccent,
   spacing,
 } from '../theme';
 import { useReducedMotion } from '../hooks/useReducedMotion';
 import { SCORE_ROW_PADDING } from '../layout';
-import { Category, PlayerIndex, ScoreSheet } from '../types';
+import { Category, ScoreSheet } from '../types';
 
-/** Column width shrinks as seats are added, so four still fit on a phone. */
-export const cellWidth = (playerCount: number): number =>
-  playerCount >= 4 ? 40 : playerCount === 3 ? 48 : 58;
+/** Column width shrinks as columns are added, so four still fit on a phone. */
+export const cellWidth = (columnCount: number): number =>
+  columnCount >= 4 ? 40 : columnCount === 3 ? 48 : 58;
+
+/**
+ * One column of the scorecard as drawn. Usually that is one seat's sheet; in a
+ * game with several columns per player it is one of a single seat's.
+ */
+export interface ColumnView {
+  key: string;
+  sheet: ScoreSheet;
+  /** Identity colour for the figures in this column. */
+  accent: Accent;
+  /** Belongs to the player on turn, so it takes previews and status colour. */
+  active: boolean;
+  /** Index within that player's card — what scoring into it is addressed by. */
+  column: number;
+  /** Spoken name when a row offers more than one column, e.g. "times 2". */
+  name: string;
+}
+
+export type ColumnPreviews = Partial<Record<Category, number>>[];
 
 /** Faint, slowly pulsing "you could score this" number. */
 const PreviewScore: React.FC<{
@@ -76,37 +94,33 @@ const PreviewScore: React.FC<{
 
 interface Props {
   category: Category;
-  /**
-   * Every seat's sheet. Passed whole rather than as a pre-sliced values array
-   * because `scores` keeps its identity while only the dice change — a fresh
-   * array per render would break the memo below on every roll and hold.
-   */
-  scores: ScoreSheet[];
-  currentPlayer: PlayerIndex;
+  /** Identity-stable between renders that do not change the card. */
+  columns: ColumnView[];
+  /** Tint for the row itself when it can be tapped. */
   accent: Accent;
-  /** Points the current player would score right now, if the row is open. */
-  preview?: number;
+  /**
+   * What the live dice would score, indexed by `ColumnView.column`. Only the
+   * active columns are looked up, and only boxes the rules allow appear.
+   */
+  previews: ColumnPreviews;
   /** Changes whenever the dice change, so the pulse restarts in sync. */
   previewNonce: number;
-  /** The box is still open to the active player, whether or not they can tap it yet. */
-  available: boolean;
   /** The active player has rolled, so open/spent colouring is meaningful. */
   rolled: boolean;
-  selectable: boolean;
+  /** The board is accepting a score right now. */
+  live: boolean;
   justScored: boolean;
-  onSelect: (category: Category) => void;
+  onSelect: (category: Category, column: number) => void;
 }
 
 const ScoreRowInner: React.FC<Props> = ({
   category,
-  scores,
-  currentPlayer,
+  columns,
   accent,
-  preview,
+  previews,
   previewNonce,
-  available,
   rolled,
-  selectable,
+  live,
   justScored,
   onSelect,
 }) => {
@@ -121,6 +135,28 @@ const ScoreRowInner: React.FC<Props> = ({
     );
   }, [justScored, flash]);
 
+  const cells = columns.map((view) => {
+    const value = view.sheet[category];
+    const preview = view.active ? previews[view.column]?.[category] : undefined;
+    return {
+      view,
+      value,
+      // A prospective score: this box is open and these are the live dice.
+      preview: value === null ? preview : undefined,
+    };
+  });
+
+  /** Cells that would take a score if tapped now. */
+  const targets = cells.filter((cell) => live && cell.preview !== undefined);
+  const selectable = targets.length > 0;
+  // With one place to score the whole row is the target, as large as it can
+  // be. With several, each cell is its own.
+  const only = targets.length === 1 ? targets[0] : null;
+  const several = targets.length > 1;
+  // A pressable row around pressable cells swallows their taps on the web, so
+  // when the cells are the targets the row is a plain container.
+  const Row: React.ElementType = several ? View : Pressable;
+
   const rowStyle = useAnimatedStyle(() => ({
     backgroundColor: selectable ? `${accent.ink}0E` : 'transparent',
     transform: [{ scale: 1 - press.value * 0.012 + flash.value * 0.02 }],
@@ -128,21 +164,21 @@ const ScoreRowInner: React.FC<Props> = ({
 
   const flashStyle = useAnimatedStyle(() => ({ opacity: flash.value * 0.8 }));
 
-  const values = scores.map((sheet) => sheet[category]);
   const isRollhouse = category === 'rollhouse';
-  const width = cellWidth(values.length);
-  const compact = values.length >= 4;
+  const width = cellWidth(columns.length);
+  const compact = columns.length >= 4;
+
+  /** Still open in at least one of the active player's columns. */
+  const available = cells.some((cell) => cell.view.active && cell.value === null);
 
   /**
    * The card reads as plain black ink until the dice are in play. Once the
    * active player has rolled it lights up: green where a box is still open to
    * them, red where it is already spent.
    */
-  const statusColor = !rolled
-    ? palette.cardInk
-    : available
-      ? palette.cardOpen
-      : palette.cardClosed;
+  const status = (open: boolean) =>
+    !rolled ? palette.cardInk : open ? palette.cardOpen : palette.cardClosed;
+  const statusColor = status(available);
 
   return (
     <Animated.View style={[styles.rowWrap, rowStyle]}>
@@ -154,21 +190,25 @@ const ScoreRowInner: React.FC<Props> = ({
           flashStyle,
         ]}
       />
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${CATEGORY_LABELS[category]}${
-          preview !== undefined ? `, worth ${preview} points` : ''
-        }`}
-        accessibilityState={{ disabled: !selectable }}
-        disabled={!selectable}
-        onPress={() => onSelect(category)}
-        onPressIn={() => {
-          press.value = withSpring(1, { damping: 20, stiffness: 400 });
-        }}
-        onPressOut={() => {
-          press.value = withSpring(0, { damping: 20, stiffness: 400 });
-        }}
+      <Row
         style={styles.row}
+        {...(several
+          ? {}
+          : {
+              accessibilityRole: 'button' as const,
+              accessibilityLabel: `${CATEGORY_LABELS[category]}${
+                only ? `, worth ${only.preview} points` : ''
+              }`,
+              accessibilityState: { disabled: !only },
+              disabled: !only,
+              onPress: () => only && onSelect(category, only.view.column),
+              onPressIn: () => {
+                press.value = withSpring(1, { damping: 20, stiffness: 400 });
+              },
+              onPressOut: () => {
+                press.value = withSpring(0, { damping: 20, stiffness: 400 });
+              },
+            })}
       >
         <Ionicons
           name={CATEGORY_ICONS[category]}
@@ -199,60 +239,66 @@ const ScoreRowInner: React.FC<Props> = ({
           </Text>
         </Text>
 
-        {values.map((value, player) => {
-          const accentOf = seatAccent(player);
-          const isActive = player === currentPlayer;
-          // A prospective score: this box is open and these are the live dice.
-          const showsPreview = value === null && isActive && preview !== undefined;
+        {cells.map(({ view, value, preview }) => {
+          const showsPreview = preview !== undefined;
+          const cellStatus = status(value === null);
+          const tappable = several && showsPreview;
 
-          return (
-            <View
-              key={player}
-              style={[
-                styles.cell,
-                { width },
-                // The active seat's cell is tinted to match its status, so the
-                // fill and the figure inside it always agree.
-                isActive && {
-                  backgroundColor: `${statusColor}12`,
-                  borderColor: `${statusColor}33`,
-                },
-                showsPreview && {
-                  backgroundColor: `${statusColor}24`,
-                  borderColor: `${statusColor}55`,
-                },
-                // Inactive seats recede so the live column is unambiguous.
-                !isActive && { opacity: INACTIVE_SEAT_OPACITY },
-              ]}
+          const content =
+            value !== null ? (
+              <Text
+                style={[
+                  styles.cellText,
+                  compact && styles.cellTextCompact,
+                  // The active player's own spent boxes take the status
+                  // colour; other columns keep their identity colour, since
+                  // they are information rather than a choice being offered.
+                  { color: view.active ? cellStatus : view.accent.ink },
+                ]}
+              >
+                {value}
+              </Text>
+            ) : showsPreview ? (
+              <PreviewScore points={preview} nonce={previewNonce} compact={compact} />
+            ) : (
+              <Text style={[styles.empty, view.active && { color: cellStatus }]}>–</Text>
+            );
+
+          const cellStyle = [
+            styles.cell,
+            { width },
+            // An active cell is tinted to match its status, so the fill and
+            // the figure inside it always agree.
+            view.active && {
+              backgroundColor: `${cellStatus}12`,
+              borderColor: `${cellStatus}33`,
+            },
+            showsPreview && {
+              backgroundColor: `${cellStatus}24`,
+              borderColor: `${cellStatus}55`,
+            },
+            // Inactive columns recede so the live ones are unambiguous.
+            !view.active && { opacity: INACTIVE_SEAT_OPACITY },
+          ];
+
+          return tappable ? (
+            <Pressable
+              key={view.key}
+              accessibilityRole="button"
+              accessibilityLabel={`${CATEGORY_LABELS[category]} ${view.name}, worth ${preview} points`}
+              onPress={() => onSelect(category, view.column)}
+              hitSlop={4}
+              style={cellStyle}
             >
-              {value !== null ? (
-                <Text
-                  style={[
-                    styles.cellText,
-                    compact && styles.cellTextCompact,
-                    // The active player's own spent boxes take the status
-                    // colour; other seats keep their identity colour, since
-                    // they are information rather than a choice being offered.
-                    { color: isActive ? statusColor : accentOf.ink },
-                  ]}
-                >
-                  {value}
-                </Text>
-              ) : showsPreview ? (
-                <PreviewScore
-                  points={preview!}
-                  nonce={previewNonce}
-                  compact={compact}
-                />
-              ) : (
-                <Text style={[styles.empty, isActive && { color: statusColor }]}>
-                  –
-                </Text>
-              )}
+              {content}
+            </Pressable>
+          ) : (
+            <View key={view.key} style={cellStyle}>
+              {content}
             </View>
           );
         })}
-      </Pressable>
+      </Row>
     </Animated.View>
   );
 };
@@ -260,10 +306,33 @@ const ScoreRowInner: React.FC<Props> = ({
 /**
  * Thirteen of these are mounted at once and the AI driver dispatches roughly
  * five times a second while it plays, so re-rendering them all on every tick
- * was the app's hottest path. Every prop is either a primitive or an
- * identity-stable object, so the default shallow comparison is enough.
+ * was the app's hottest path.
+ *
+ * Every prop but one is a primitive or an identity-stable object. `previews`
+ * is rebuilt whenever the dice change, so it is compared by what this row would
+ * actually read from it: its own category, in the active columns.
  */
-export const ScoreRow = React.memo(ScoreRowInner);
+const sameRow = (prev: Props, next: Props): boolean => {
+  if (
+    prev.category !== next.category ||
+    prev.columns !== next.columns ||
+    prev.accent !== next.accent ||
+    prev.previewNonce !== next.previewNonce ||
+    prev.rolled !== next.rolled ||
+    prev.live !== next.live ||
+    prev.justScored !== next.justScored ||
+    prev.onSelect !== next.onSelect
+  ) {
+    return false;
+  }
+  return next.columns.every(
+    ({ active, column }) =>
+      !active ||
+      prev.previews[column]?.[next.category] === next.previews[column]?.[next.category],
+  );
+};
+
+export const ScoreRow = React.memo(ScoreRowInner, sameRow);
 ScoreRow.displayName = 'ScoreRow';
 
 const styles = StyleSheet.create({

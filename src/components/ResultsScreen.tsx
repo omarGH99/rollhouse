@@ -12,19 +12,24 @@ import Animated, {
 
 import { ActionButton } from './ActionButton';
 import { FeltPanel } from './FeltPanel';
+import { MODES } from '../logic/modes';
 import { grandTotal, lowerTotal, upperBonus, upperSubtotal } from '../logic/scoring';
 import { Achievement, winningSeats } from '../logic/stats';
 import { accents, fonts, palette, radius, spacing, textGlow } from '../theme';
-import { Player, ScoreSheet } from '../types';
+import { GameMode, Player, ScoreSheet } from '../types';
 
 interface Props {
   visible: boolean;
+  mode: GameMode;
   players: Player[];
-  scores: ScoreSheet[];
+  /** `scores[seat][column]`. */
+  scores: ScoreSheet[][];
+  /** Final score per seat, column multipliers applied. */
+  totals: number[];
   /** Earned by this game — shown once, then acknowledged. */
   achievements: Achievement[];
   onPlayAgain: () => void;
-  onNewSetup: () => void;
+  onMenu: () => void;
 }
 
 const StatLine: React.FC<{ label: string; values: number[] }> = ({
@@ -45,11 +50,13 @@ const StatLine: React.FC<{ label: string; values: number[] }> = ({
 
 export const ResultsScreen: React.FC<Props> = ({
   visible,
+  mode,
   players,
   scores,
+  totals,
   achievements,
   onPlayAgain,
-  onNewSetup,
+  onMenu,
 }) => {
   const progress = useSharedValue(0);
 
@@ -70,9 +77,11 @@ export const ResultsScreen: React.FC<Props> = ({
 
   if (!visible) return null;
 
-  const totals = scores.map(grandTotal);
-  const winners = winningSeats(scores);
+  const winners = winningSeats(totals);
+  const solo = players.length === 1;
   const isTie = winners.length > 1;
+  const { multipliers } = MODES[mode];
+  const hasLower = MODES[mode].categories.includes('chance');
   const winner = winners[0];
   const accent = accents[winner];
 
@@ -81,9 +90,11 @@ export const ResultsScreen: React.FC<Props> = ({
     .reduce((best, total) => Math.max(best, total), 0);
   const margin = totals[winner] - runnerUp;
 
-  const headline = isTie
-    ? 'DEAD HEAT'
-    : `${players[winner].name.toUpperCase()} WINS`;
+  const headline = solo
+    ? `${totals[0]} POINTS`
+    : isTie
+      ? 'DEAD HEAT'
+      : `${players[winner].name.toUpperCase()} WINS`;
 
   return (
     <View style={[StyleSheet.absoluteFill, styles.root]}>
@@ -109,9 +120,11 @@ export const ResultsScreen: React.FC<Props> = ({
             {headline}
           </Text>
           <Text style={styles.margin}>
-            {isTie
-              ? `${winners.length} players finished level on ${totals[winner]}`
-              : `by ${margin} point${margin === 1 ? '' : 's'}`}
+            {solo
+              ? `${MODES[mode].label} game, played alone`
+              : isTie
+                ? `${winners.length} players finished level on ${totals[winner]}`
+                : `by ${margin} point${margin === 1 ? '' : 's'}`}
           </Text>
 
           <View style={styles.totalsRow}>
@@ -166,9 +179,33 @@ export const ResultsScreen: React.FC<Props> = ({
           ) : null}
 
           <FeltPanel style={styles.breakdown} intensity={20}>
-            <StatLine label="Upper subtotal" values={scores.map(upperSubtotal)} />
-            <StatLine label="Upper bonus" values={scores.map(upperBonus)} />
-            <StatLine label="Lower total" values={scores.map(lowerTotal)} />
+            {multipliers.length > 1 ? (
+              // A card of several columns is summed up column by column.
+              multipliers.map((multiplier, column) => (
+                <StatLine
+                  key={column}
+                  label={`Column ×${multiplier}`}
+                  values={scores.map((card) => grandTotal(card[column]) * multiplier)}
+                />
+              ))
+            ) : (
+              <>
+                <StatLine
+                  label="Upper subtotal"
+                  values={scores.map((card) => upperSubtotal(card[0]))}
+                />
+                <StatLine
+                  label="Upper bonus"
+                  values={scores.map((card) => upperBonus(card[0]))}
+                />
+                {hasLower ? (
+                  <StatLine
+                    label="Lower total"
+                    values={scores.map((card) => lowerTotal(card[0]))}
+                  />
+                ) : null}
+              </>
+            )}
           </FeltPanel>
 
           <ActionButton
@@ -180,9 +217,9 @@ export const ResultsScreen: React.FC<Props> = ({
             style={styles.cta}
           />
           <ActionButton
-            label="CHANGE PLAYERS"
+            label="MENU"
             accent={accent}
-            onPress={onNewSetup}
+            onPress={onMenu}
             style={styles.secondaryCta}
           />
         </ScrollView>

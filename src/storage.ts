@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { GameSession } from './logic/gameReducer';
 import {
+  deserializeLastMode,
   deserializePlayers,
   deserializeSession,
   serializePlayers,
@@ -13,7 +14,7 @@ import {
   emptyStats,
   serializeStats,
 } from './logic/stats';
-import { Player } from './types';
+import { GameMode, Player } from './types';
 
 /**
  * The only module that touches the device. Everything it stores and loads is
@@ -97,17 +98,20 @@ export const clearStats = async (): Promise<void> => {
   }
 };
 
-export const saveSeats = async (players: Player[]): Promise<void> => {
+export const saveSeats = async (players: Player[], mode: GameMode): Promise<void> => {
   try {
-    await AsyncStorage.setItem(SEATS_KEY, serializePlayers(players));
+    await AsyncStorage.setItem(SEATS_KEY, serializePlayers(players, mode));
   } catch {
     // Ignored.
   }
 };
 
-export const loadSeats = async (): Promise<Player[] | null> => {
+/** The last table dealt: its seats, and the game type they played. */
+export const loadSeats = async (): Promise<{ players: Player[]; mode: GameMode } | null> => {
   try {
-    return deserializePlayers(await AsyncStorage.getItem(SEATS_KEY));
+    const raw = await AsyncStorage.getItem(SEATS_KEY);
+    const players = deserializePlayers(raw);
+    return players ? { players, mode: deserializeLastMode(raw) } : null;
   } catch {
     return null;
   }

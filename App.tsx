@@ -9,10 +9,10 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { FeltBackdrop } from './src/components/FeltBackdrop';
-import { RulesScreen } from './src/components/RulesScreen';
-import { SettingsScreen } from './src/components/SettingsScreen';
-import { SetupScreen } from './src/components/SetupScreen';
-import { StatsScreen } from './src/components/StatsScreen';
+import { RulesScreen } from './src/screens/RulesScreen';
+import { SettingsScreen } from './src/screens/SettingsScreen';
+import { SetupScreen } from './src/screens/SetupScreen';
+import { HighScoresScreen } from './src/screens/HighScoresScreen';
 import { useRollhouseGame } from './src/hooks/useRollhouseGame';
 import { useSettings } from './src/hooks/useSettings';
 import { SHAKE_SUPPORTED } from './src/hooks/useShake';
@@ -77,7 +77,7 @@ const Root: React.FC = () => {
         />
       )}
 
-      <StatsScreen
+      <HighScoresScreen
         visible={sheet === 'scores'}
         stats={stats}
         highScores={highScores}

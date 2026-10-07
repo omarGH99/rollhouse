@@ -17,8 +17,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ActionButton } from './ActionButton';
-import { FeltPanel } from './FeltPanel';
+import { ActionButton } from '../components/ActionButton';
+import { FeltPanel } from '../components/FeltPanel';
 import { GAME_MODES, MODES, roundsFor } from '../logic/modes';
 import { MAX_NAME_LENGTH } from '../logic/persistence';
 import { accents, fonts, palette, radius, spacing } from '../theme';

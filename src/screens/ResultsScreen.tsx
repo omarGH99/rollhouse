@@ -10,8 +10,8 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { ActionButton } from './ActionButton';
-import { FeltPanel } from './FeltPanel';
+import { ActionButton } from '../components/ActionButton';
+import { FeltPanel } from '../components/FeltPanel';
 import { MODES } from '../logic/modes';
 import { grandTotal, lowerTotal, upperBonus, upperSubtotal } from '../logic/scoring';
 import { Achievement, winningSeats } from '../logic/stats';

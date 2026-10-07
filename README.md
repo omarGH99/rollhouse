@@ -89,9 +89,9 @@ App.tsx          picks between the menu and a game; owns the sheets over both
 src/logic/       pure TypeScript: rules, game types, scoring, bots,
                  persistence, stats, high scores, settings
 src/hooks/       the seam between that and React: the game, settings, shake
-src/screens/     the two places you can be: the menu and a game
-src/components/  everything drawn inside them, including the full-screen
-                 sheets (new game, rules, high scores, settings, results)
+src/screens/     every full screen: menu, game, dice page, new game, rules,
+                 high scores, settings, results
+src/components/  the pieces those are built from: dice, scorecard, buttons
 src/storage.ts   the only module that reads or writes the device
 src/feedback.ts  sound and vibration
 src/theme.ts     colours, type and spacing

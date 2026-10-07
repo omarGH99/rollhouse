@@ -10,7 +10,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { FeltPanel } from './FeltPanel';
+import { FeltPanel } from '../components/FeltPanel';
 import { HighScores, ScoreEntry } from '../logic/highScores';
 import { GAME_MODES, MODES } from '../logic/modes';
 import { ACHIEVEMENTS, Stats, averageScore } from '../logic/stats';
@@ -55,7 +55,7 @@ const Tile: React.FC<{ label: string; value: string | number; wide?: boolean }> 
   </FeltPanel>
 );
 
-export const StatsScreen: React.FC<Props> = ({
+export const HighScoresScreen: React.FC<Props> = ({
   visible,
   stats,
   highScores,

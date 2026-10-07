@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react-native';
 
-import { StatsScreen } from './StatsScreen';
+import { HighScoresScreen } from './HighScoresScreen';
 import { HighScores, ScoreEntry, emptyHighScores } from '../logic/highScores';
 import { emptyStats } from '../logic/stats';
 
@@ -17,10 +17,10 @@ const entry = (name: string, score: number, extra: Partial<ScoreEntry> = {}): Sc
 
 const setup = (
   highScores: HighScores = emptyHighScores(),
-  props: Partial<React.ComponentProps<typeof StatsScreen>> = {},
+  props: Partial<React.ComponentProps<typeof HighScoresScreen>> = {},
 ) =>
   render(
-    <StatsScreen
+    <HighScoresScreen
       visible
       stats={emptyStats()}
       highScores={highScores}

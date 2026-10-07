@@ -3,9 +3,9 @@ import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-na
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ActionButton } from './ActionButton';
-import { Die } from './Die';
-import { FeltBackdrop } from './FeltBackdrop';
+import { ActionButton } from '../components/ActionButton';
+import { Die } from '../components/Die';
+import { FeltBackdrop } from '../components/FeltBackdrop';
 import { MAX_ROLLS } from '../logic/gameReducer';
 import { CATEGORY_LABELS } from '../logic/scoring';
 import { Accent, fonts, palette, radius, spacing, textGlow } from '../theme';

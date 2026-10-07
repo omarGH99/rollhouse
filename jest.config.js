@@ -18,7 +18,11 @@ module.exports = {
     {
       displayName: 'ui',
       preset: 'jest-expo',
-      roots: ['<rootDir>/src/components', '<rootDir>/src/hooks'],
+      roots: [
+        '<rootDir>/src/components',
+        '<rootDir>/src/hooks',
+        '<rootDir>/src/screens',
+      ],
       testMatch: ['**/*.test.tsx'],
       setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
     },

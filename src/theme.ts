@@ -129,8 +129,6 @@ export const accents: Accent[] = [
 /** Seat colour, safe for any index. */
 export const seatAccent = (seat: number): Accent => accents[seat % accents.length];
 
-/** @deprecated use `seatAccent`. */
-export const accentFor = seatAccent;
 
 /** Opacity applied to seats that are not on turn. */
 export const INACTIVE_SEAT_OPACITY = 0.4;

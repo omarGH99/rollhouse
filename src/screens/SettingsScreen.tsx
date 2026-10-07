@@ -10,7 +10,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { FeltPanel } from './FeltPanel';
+import { FeltPanel } from '../components/FeltPanel';
 import { Settings } from '../logic/settings';
 import { accents, fonts, palette, radius, spacing } from '../theme';
 

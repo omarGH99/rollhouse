@@ -10,8 +10,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { CATEGORY_ICONS } from './categoryIcons';
-import { FeltPanel } from './FeltPanel';
+import { CATEGORY_ICONS } from '../components/categoryIcons';
+import { FeltPanel } from '../components/FeltPanel';
 import { DICE_COUNT, MAX_ROLLS } from '../logic/gameReducer';
 import { GAME_MODES, MODES, roundsFor } from '../logic/modes';
 import {

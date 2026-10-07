@@ -30,30 +30,14 @@ More in [docs/screenshots](docs/screenshots).
 
 ## Play it
 
-One image with both codes, ready to send on:
-**[docs/qr-share.png](docs/qr-share.png)**
+There is no public build yet. To try it:
 
-### iPhone
+- **In a browser:** `npm install`, then `npm run web`.
+- **On a phone:** `npm start`, then scan the code it prints with
+  [Expo Go](https://apps.apple.com/app/expo-go/id982107779) (iPhone) or the
+  Expo Go app (Android). Expo Go must be **SDK 54**.
 
-Install **[Expo Go](https://apps.apple.com/app/expo-go/id982107779)** from the
-App Store, then scan:
-
-<img src="docs/qr-iphone-expo-go.png" width="240" alt="Expo Go QR code" />
-
-Expo Go must be **SDK 54**. It normally is, since the App Store ships the
-latest — but a mismatch is the one thing that will stop this opening.
-
-### Android
-
-Scan to download the app directly. No Expo Go needed.
-
-<img src="docs/qr-android-apk.png" width="240" alt="Android APK QR code" />
-
-Android will warn about installing from an unknown source, which is expected
-for anything outside the Play Store.
-
-> The Android code points at one specific build. Rebuilding produces a new URL,
-> so regenerate the code afterwards — see below.
+Shaking to throw, vibration and sound only work on a phone.
 
 ---
 
@@ -90,6 +74,10 @@ npx eas build --platform android --profile preview
 node scripts/make-qr.js --apk <the new Application Archive URL>
 ```
 
+`make-qr.js` writes tester QR codes into `docs/`: one that opens the latest
+update in Expo Go, and one that downloads that Android build. The Android code
+points at one specific build, so regenerate it after each one.
+
 On Windows PowerShell, use `npx.cmd` rather than `npx`.
 
 ---
@@ -97,10 +85,21 @@ On Windows PowerShell, use `npx.cmd` rather than `npx`.
 ## How it is put together
 
 ```
-src/logic/       pure TypeScript: rules, scoring, AI, persistence, stats
-src/hooks/       the single seam between that and React
-src/components/  presentation only
+App.tsx          picks between the menu and a game; owns the sheets over both
+src/logic/       pure TypeScript: rules, game types, scoring, bots,
+                 persistence, stats, high scores, settings
+src/hooks/       the seam between that and React: the game, settings, shake
+src/screens/     the two places you can be: the menu and a game
+src/components/  everything drawn inside them, including the full-screen
+                 sheets (new game, rules, high scores, settings, results)
+src/storage.ts   the only module that reads or writes the device
+src/feedback.ts  sound and vibration
+src/theme.ts     colours, type and spacing
+assets/          icons, splash and the generated sound effects
+scripts/         make-sounds.js and make-qr.js
 ```
+
+Tests sit beside the file they cover, as `*.test.ts(x)`.
 
 `src/logic` imports nothing from React or React Native, which is why the rules
 engine and the AI can be tested headlessly and why the AI could be built and

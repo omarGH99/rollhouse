@@ -46,7 +46,6 @@ GoogleService-Info.plist
 
 # Logs and editor state
 npm-debug.log*
-.claude/settings.local.json
 .idea/
 .vscode/*
 !.vscode/extensions.json

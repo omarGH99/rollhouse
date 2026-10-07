@@ -9,6 +9,17 @@ import {
   serializeSession,
 } from './logic/persistence';
 import {
+  HighScores,
+  deserializeHighScores,
+  emptyHighScores,
+  serializeHighScores,
+} from './logic/highScores';
+import {
+  Settings,
+  deserializeSettings,
+  serializeSettings,
+} from './logic/settings';
+import {
   Stats,
   deserializeStats,
   emptyStats,
@@ -28,6 +39,8 @@ import { GameMode, Player } from './types';
 const GAME_KEY = 'rollhouse:game';
 const STATS_KEY = 'rollhouse:stats';
 const SEATS_KEY = 'rollhouse:seats';
+const SCORES_KEY = 'rollhouse:scores';
+const SETTINGS_KEY = 'rollhouse:settings';
 
 /** Where builds before the rename kept the same two payloads. */
 const LEGACY_PREFIX = 'yahtzee';
@@ -114,5 +127,45 @@ export const loadSeats = async (): Promise<{ players: Player[]; mode: GameMode }
     return players ? { players, mode: deserializeLastMode(raw) } : null;
   } catch {
     return null;
+  }
+};
+
+export const saveHighScores = async (scores: HighScores): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(SCORES_KEY, serializeHighScores(scores));
+  } catch {
+    // Ignored.
+  }
+};
+
+export const loadHighScores = async (): Promise<HighScores> => {
+  try {
+    return deserializeHighScores(await AsyncStorage.getItem(SCORES_KEY));
+  } catch {
+    return emptyHighScores();
+  }
+};
+
+export const clearHighScores = async (): Promise<void> => {
+  try {
+    await AsyncStorage.removeItem(SCORES_KEY);
+  } catch {
+    // Ignored.
+  }
+};
+
+export const saveSettings = async (settings: Settings): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(SETTINGS_KEY, serializeSettings(settings));
+  } catch {
+    // Ignored.
+  }
+};
+
+export const loadSettings = async (): Promise<Settings> => {
+  try {
+    return deserializeSettings(await AsyncStorage.getItem(SETTINGS_KEY));
+  } catch {
+    return deserializeSettings(null);
   }
 };

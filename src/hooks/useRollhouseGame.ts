@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import * as Haptics from 'expo-haptics';
 
-import { Category, DieValue, GameMode, GameState, Player, PlayerIndex } from '../types';
+import {
+  Category,
+  DieValue,
+  GameMode,
+  GameState,
+  LastScored,
+  Phase,
+  Player,
+  PlayerIndex,
+} from '../types';
+import { hapticNotify as notify, hapticTap as tap, play } from '../feedback';
 import {
   DICE_COUNT,
   GameSession,
@@ -16,17 +26,26 @@ import {
   sessionReducer,
   undoSeat,
 } from '../logic/gameReducer';
-import { boardFor, planKeep, planScore } from '../logic/ai';
+import { ScoreDecision, boardFor, planKeep, planScore } from '../logic/ai';
+import {
+  HighScores,
+  emptyHighScores,
+  entriesFor,
+  insertScores,
+} from '../logic/highScores';
 import { MODES, totalsFor } from '../logic/modes';
 import { previewScores } from '../logic/scoring';
 import { Achievement, Stats, emptyStats, recordGame } from '../logic/stats';
 import {
   clearGame,
+  clearHighScores,
   clearStats,
   loadGame,
+  loadHighScores,
   loadSeats,
   loadStats,
   saveGame,
+  saveHighScores,
   saveSeats,
   saveStats,
 } from '../storage';
@@ -35,6 +54,20 @@ import {
 const AI_THINK_MS = 700;
 const AI_ROLL_MS = 1100;
 const AI_HANDOFF_MS = 900;
+const AI_HOLD_MS = 220;
+/** How much of that pacing is left when bots are set to play fast. */
+const FAST_PACE = 0.35;
+
+/** What the hint button suggests for the dice as they lie. */
+export interface Hint {
+  /**
+   * Ids of the dice to keep before throwing again; null when there is no throw
+   * left to take. All five means "these are as good as they get: score them".
+   */
+  keep: number[] | null;
+  /** Where the hand would best be scored as it stands. */
+  box: ScoreDecision;
+}
 
 export interface RollhouseGame {
   state: GameState;
@@ -55,6 +88,15 @@ export interface RollhouseGame {
   /** A game has been dealt or restored and is not yet finished. */
   inProgress: boolean;
   stats: Stats;
+  highScores: HighScores;
+  /**
+   * Best place any player took on the high-score table with the game that just
+   * finished, from 0; null if nobody placed, or no game has just finished.
+   */
+  bestRank: number | null;
+  /** A suggestion the player asked for, while the dice it was for still lie. */
+  hint: Hint | null;
+  requestHint: () => void;
   /** Achievements earned by the game that just finished. */
   pendingAchievements: Achievement[];
   acknowledgeAchievements: () => void;
@@ -65,23 +107,15 @@ export interface RollhouseGame {
   undo: () => void;
   newGame: (players: Player[], mode: GameMode) => void;
   reset: () => void;
+  /** Erase the record, achievements and every high-score table. */
   resetStats: () => void;
 }
-
-/** Haptics are best-effort: silently no-op on web / unsupported devices. */
-const tap = (style: Haptics.ImpactFeedbackStyle) => {
-  Haptics.impactAsync(style).catch(() => {});
-};
-
-const notify = (type: Haptics.NotificationFeedbackType) => {
-  Haptics.notificationAsync(type).catch(() => {});
-};
 
 /**
  * `active` is whether the game is on screen. While it is not — the player is
  * at the menu — bots hold their turns rather than playing on unseen.
  */
-export const useRollhouseGame = (active = true): RollhouseGame => {
+export const useRollhouseGame = (active = true, fastBots = false): RollhouseGame => {
   const [session, dispatch] = useReducer(
     sessionReducer,
     undefined,
@@ -92,6 +126,8 @@ export const useRollhouseGame = (active = true): RollhouseGame => {
   // offer "Continue" for.
   const [started, setStarted] = useState(false);
   const [stats, setStats] = useState<Stats>(emptyStats);
+  const [highScores, setHighScores] = useState<HighScores>(emptyHighScores);
+  const [bestRank, setBestRank] = useState<number | null>(null);
   const [pendingAchievements, setPendingAchievements] = useState<Achievement[]>([]);
 
   const { state } = session;
@@ -103,13 +139,15 @@ export const useRollhouseGame = (active = true): RollhouseGame => {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [saved, savedStats, seats] = await Promise.all([
+      const [saved, savedStats, seats, savedScores] = await Promise.all([
         loadGame(),
         loadStats(),
         loadSeats(),
+        loadHighScores(),
       ]);
       if (cancelled) return;
       setStats(savedStats);
+      setHighScores(savedScores);
       if (saved) {
         setStarted(true);
         dispatch({ type: 'RESTORE', session: saved });
@@ -125,15 +163,16 @@ export const useRollhouseGame = (active = true): RollhouseGame => {
   }, []);
 
   // Persist after every change, once the initial read has finished — saving
-  // before then would overwrite the save with the placeholder game.
+  // before then would overwrite the save with the placeholder game. Nor is the
+  // placeholder itself saved: nobody dealt it, so it is not a game to resume.
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || !started) return;
     if (state.phase === 'gameover') {
       void clearGame();
     } else {
       void saveGame(session);
     }
-  }, [ready, session, state.phase]);
+  }, [ready, started, session, state.phase]);
 
   /* ---------------------------------------------------------------------- */
   /* End of game: fold into stats exactly once                               */
@@ -144,6 +183,11 @@ export const useRollhouseGame = (active = true): RollhouseGame => {
   // Read from the effect below without making it re-run when stats change.
   const statsRef = useRef(stats);
   statsRef.current = stats;
+  const highScoresRef = useRef(highScores);
+  highScoresRef.current = highScores;
+
+  /** Seats that asked for a hint in the current game. */
+  const hintedRef = useRef<number[]>([]);
 
   useEffect(() => {
     if (!ready || state.phase !== 'gameover') return;
@@ -156,6 +200,17 @@ export const useRollhouseGame = (active = true): RollhouseGame => {
     setStats(next);
     if (newlyUnlocked.length) setPendingAchievements(newlyUnlocked);
     void saveStats(next);
+
+    const placed = insertScores(
+      highScoresRef.current,
+      state.mode,
+      entriesFor(state, hintedRef.current, Date.now()),
+    );
+    const ranks = placed.ranks.filter((rank) => rank >= 0);
+    highScoresRef.current = placed.scores;
+    setHighScores(placed.scores);
+    setBestRank(ranks.length ? Math.min(...ranks) : null);
+    void saveHighScores(placed.scores);
   }, [ready, state]);
 
   /* ---------------------------------------------------------------------- */
@@ -209,8 +264,14 @@ export const useRollhouseGame = (active = true): RollhouseGame => {
   }, []);
 
   const toggleHold = useCallback((dieId: number) => {
-    if (liveRef.current.aiTurn) return;
+    const live = liveRef.current;
+    if (live.aiTurn) return;
+    // Mirrors the reducer's own rule, so there is no click for a tap it ignores.
+    if (live.state.phase !== 'turn' || !live.state.hasRolled || live.state.rollsLeft === 0) {
+      return;
+    }
     tap(Haptics.ImpactFeedbackStyle.Light);
+    play('keep');
     dispatch({ type: 'TOGGLE_HOLD', dieId });
   }, []);
 
@@ -237,32 +298,111 @@ export const useRollhouseGame = (active = true): RollhouseGame => {
     dispatch({ type: 'UNDO' });
   }, []);
 
+  /** Everything that belongs to one game rather than to the table. */
+  const clearGameExtras = useCallback(() => {
+    setPendingAchievements([]);
+    setBestRank(null);
+    setHintFor(null);
+    hintedRef.current = [];
+    recordedRef.current = null;
+  }, []);
+
   const newGame = useCallback((players: Player[], mode: GameMode) => {
     tap(Haptics.ImpactFeedbackStyle.Medium);
-    setPendingAchievements([]);
-    recordedRef.current = null;
+    clearGameExtras();
     setStarted(true);
     void saveSeats(players, mode);
     dispatch({ type: 'RESET', players, mode });
-  }, []);
+  }, [clearGameExtras]);
 
   const reset = useCallback(() => {
     tap(Haptics.ImpactFeedbackStyle.Medium);
-    setPendingAchievements([]);
-    recordedRef.current = null;
+    clearGameExtras();
+    setStarted(true);
     dispatch({ type: 'RESET' });
-  }, []);
+  }, [clearGameExtras]);
 
   const resetStats = useCallback(() => {
     setStats(emptyStats());
+    setHighScores(emptyHighScores());
     void clearStats();
+    void clearHighScores();
   }, []);
+
+  /* ---------------------------------------------------------------------- */
+  /* Hints                                                                   */
+  /* ---------------------------------------------------------------------- */
+
+  // A hint is for one particular lie of the dice. It is remembered by the roll
+  // and card it was asked on, so keeping a die does not dismiss it but the
+  // next throw, or a score, does.
+  const [hintFor, setHintFor] = useState<{ nonce: number; scores: GameState['scores'] } | null>(
+    null,
+  );
+
+  const requestHint = useCallback(() => {
+    const live = liveRef.current;
+    if (live.aiTurn || live.state.phase !== 'turn' || !live.state.hasRolled) return;
+    const seat = live.state.currentPlayer;
+    if (!hintedRef.current.includes(seat)) hintedRef.current = [...hintedRef.current, seat];
+    setHintFor({ nonce: live.state.rollNonce, scores: live.state.scores });
+  }, []);
+
+  const hintLive =
+    hintFor !== null &&
+    hintFor.nonce === state.rollNonce &&
+    hintFor.scores === state.scores &&
+    state.phase === 'turn' &&
+    !aiTurn;
+  const hintFaces = diceValues(state.dice).join('');
+
+  const hint = useMemo<Hint | null>(() => {
+    if (!hintLive) return null;
+    const faces = Array.from(hintFaces, (face) => Number(face) as DieValue);
+    const board = boardFor(state.scores[state.currentPlayer], state.mode);
+    // The strongest bot's advice, whatever the table is playing against.
+    const keep =
+      state.rollsLeft > 0
+        ? planKeep(faces, board, state.rollsLeft, 'hard').keep.map((i) => state.dice[i].id)
+        : null;
+    return { keep, box: planScore(faces, board, 'hard') };
+    // `state.dice` is read for ids only, which never change; the faces are
+    // what matter, and holding a die must not recompute the search.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hintLive, hintFaces, state.scores, state.currentPlayer, state.mode, state.rollsLeft]);
+
+  /* ---------------------------------------------------------------------- */
+  /* Sound                                                                   */
+  /* ---------------------------------------------------------------------- */
+
+  // Sounds follow the state rather than the buttons, so a bot's throws and
+  // scores are heard exactly as a person's are.
+  const heard = useRef<{ nonce: number; last: LastScored | null; phase: Phase } | null>(null);
+
+  useEffect(() => {
+    if (!ready) return;
+    const before = heard.current;
+    heard.current = { nonce: state.rollNonce, last: state.lastScored, phase: state.phase };
+    // Nothing on the first pass: that is a restored game appearing, not play.
+    if (!before || !active) return;
+
+    if (state.rollNonce > before.nonce) play('throw');
+
+    if (state.phase === 'gameover' && before.phase !== 'gameover') {
+      play('win');
+    } else if (state.lastScored && state.lastScored !== before.last) {
+      const { points, bonus } = state.lastScored;
+      play(bonus > 0 ? 'bonus' : points > 0 ? 'score' : 'zero');
+    }
+  }, [ready, active, state.rollNonce, state.lastScored, state.phase]);
 
   const acknowledgeAchievements = useCallback(() => setPendingAchievements([]), []);
 
   /* ---------------------------------------------------------------------- */
   /* AI turn driver                                                          */
   /* ---------------------------------------------------------------------- */
+
+  const pace = fastBots ? FAST_PACE : 1;
 
   /**
    * Bots start their own turns; people tap in. Keyed on the same predicate the
@@ -272,9 +412,9 @@ export const useRollhouseGame = (active = true): RollhouseGame => {
   useEffect(() => {
     if (!ready || !active || state.phase !== 'handoff') return;
     if (awaitsTurnStart(state)) return;
-    const timer = setTimeout(() => dispatch({ type: 'BEGIN_TURN' }), AI_HANDOFF_MS);
+    const timer = setTimeout(() => dispatch({ type: 'BEGIN_TURN' }), AI_HANDOFF_MS * pace);
     return () => clearTimeout(timer);
-  }, [ready, active, state]);
+  }, [ready, active, pace, state]);
 
   /**
    * The bot's hold plan for the dice as they lie. Holds are applied one die per
@@ -308,12 +448,12 @@ export const useRollhouseGame = (active = true): RollhouseGame => {
       const timer = setTimeout(() => {
         const board = boardFor(state.scores[state.currentPlayer], state.mode);
         dispatch({ type: 'SCORE', ...planScore(dice, board, aiLevel) });
-      }, AI_THINK_MS);
+      }, AI_THINK_MS * pace);
       return () => clearTimeout(timer);
     }
 
     if (!state.hasRolled) {
-      const timer = setTimeout(() => dispatch({ type: 'ROLL' }), AI_THINK_MS);
+      const timer = setTimeout(() => dispatch({ type: 'ROLL' }), AI_THINK_MS * pace);
       return () => clearTimeout(timer);
     }
 
@@ -330,10 +470,10 @@ export const useRollhouseGame = (active = true): RollhouseGame => {
           dispatch({ type: 'ROLL' });
         }
       },
-      mismatch >= 0 ? 220 : AI_ROLL_MS,
+      (mismatch >= 0 ? AI_HOLD_MS : AI_ROLL_MS) * pace,
     );
     return () => clearTimeout(timer);
-  }, [ready, active, aiTurn, aiKeep, aiLevel, state]);
+  }, [ready, active, pace, aiTurn, aiKeep, aiLevel, state]);
 
   return {
     state,
@@ -347,6 +487,10 @@ export const useRollhouseGame = (active = true): RollhouseGame => {
     ready,
     inProgress: started && state.phase !== 'gameover',
     stats,
+    highScores,
+    bestRank,
+    hint,
+    requestHint,
     pendingAchievements,
     acknowledgeAchievements,
     roll,

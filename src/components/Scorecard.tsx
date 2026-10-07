@@ -46,6 +46,8 @@ interface Props {
   /** Board is live and the active player has rolled. */
   selectable: boolean;
   lastScored: LastScored | null;
+  /** A box a hint is pointing at, on the active player's card. */
+  suggested?: { category: Category; column: number } | null;
   onSelect: (category: Category, column: number) => void;
 }
 
@@ -122,6 +124,7 @@ export const Scorecard: React.FC<Props> = ({
   previewNonce,
   selectable,
   lastScored,
+  suggested = null,
   onSelect,
 }) => {
   const { categories, multipliers } = MODES[mode];
@@ -178,6 +181,7 @@ export const Scorecard: React.FC<Props> = ({
           // On a one-seat-at-a-time card, only flash if that seat is on show.
           (!stacked || lastScored.player === shown)
         }
+        suggestedColumn={suggested?.category === category ? suggested.column : null}
         onSelect={onSelect}
       />
     ));

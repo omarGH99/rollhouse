@@ -110,6 +110,8 @@ interface Props {
   /** The board is accepting a score right now. */
   live: boolean;
   justScored: boolean;
+  /** The column a hint points at in this row, or null. */
+  suggestedColumn?: number | null;
   onSelect: (category: Category, column: number) => void;
 }
 
@@ -122,6 +124,7 @@ const ScoreRowInner: React.FC<Props> = ({
   rolled,
   live,
   justScored,
+  suggestedColumn = null,
   onSelect,
 }) => {
   const flash = useSharedValue(0);
@@ -198,7 +201,7 @@ const ScoreRowInner: React.FC<Props> = ({
               accessibilityRole: 'button' as const,
               accessibilityLabel: `${CATEGORY_LABELS[category]}${
                 only ? `, worth ${only.preview} points` : ''
-              }`,
+              }${only && only.view.column === suggestedColumn ? ', suggested' : ''}`,
               accessibilityState: { disabled: !only },
               disabled: !only,
               onPress: () => only && onSelect(category, only.view.column),
@@ -243,6 +246,7 @@ const ScoreRowInner: React.FC<Props> = ({
           const showsPreview = preview !== undefined;
           const cellStatus = status(value === null);
           const tappable = several && showsPreview;
+          const suggested = view.active && showsPreview && view.column === suggestedColumn;
 
           const content =
             value !== null ? (
@@ -279,13 +283,18 @@ const ScoreRowInner: React.FC<Props> = ({
             },
             // Inactive columns recede so the live ones are unambiguous.
             !view.active && { opacity: INACTIVE_SEAT_OPACITY },
+            // A hint rings the box in brass: a third colour, so it reads as
+            // advice and not as the open or spent state.
+            suggested && styles.cellSuggested,
           ];
 
           return tappable ? (
             <Pressable
               key={view.key}
               accessibilityRole="button"
-              accessibilityLabel={`${CATEGORY_LABELS[category]} ${view.name}, worth ${preview} points`}
+              accessibilityLabel={`${CATEGORY_LABELS[category]} ${view.name}, worth ${preview} points${
+                suggested ? ', suggested' : ''
+              }`}
               onPress={() => onSelect(category, view.column)}
               hitSlop={4}
               style={cellStyle}
@@ -321,6 +330,7 @@ const sameRow = (prev: Props, next: Props): boolean => {
     prev.rolled !== next.rolled ||
     prev.live !== next.live ||
     prev.justScored !== next.justScored ||
+    prev.suggestedColumn !== next.suggestedColumn ||
     prev.onSelect !== next.onSelect
   ) {
     return false;
@@ -384,6 +394,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: 'transparent',
+  },
+  cellSuggested: {
+    borderWidth: 2,
+    borderColor: palette.brass,
   },
   cellText: {
     fontFamily: fonts.numeric,

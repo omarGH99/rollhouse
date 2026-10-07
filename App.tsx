@@ -10,22 +10,26 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { FeltBackdrop } from './src/components/FeltBackdrop';
 import { RulesScreen } from './src/components/RulesScreen';
+import { SettingsScreen } from './src/components/SettingsScreen';
 import { SetupScreen } from './src/components/SetupScreen';
 import { StatsScreen } from './src/components/StatsScreen';
 import { useRollhouseGame } from './src/hooks/useRollhouseGame';
+import { useSettings } from './src/hooks/useSettings';
+import { SHAKE_SUPPORTED } from './src/hooks/useShake';
 import { MODES, roundsFor } from './src/logic/modes';
 import { GameScreen } from './src/screens/GameScreen';
 import { MenuScreen } from './src/screens/MenuScreen';
 import { accents, palette } from './src/theme';
 import { GameMode, Player } from './src/types';
 
-type Sheet = 'rules' | 'scores' | 'setup' | null;
+type Sheet = 'rules' | 'scores' | 'setup' | 'settings' | null;
 
 const Root: React.FC = () => {
   // Every session opens on the menu, whether or not there is a game to resume.
   const [playing, setPlaying] = useState(false);
-  const game = useRollhouseGame(playing);
-  const { state, ready, inProgress, stats, newGame, resetStats } = game;
+  const { settings, update } = useSettings();
+  const game = useRollhouseGame(playing, settings.fastBots);
+  const { state, ready, inProgress, stats, highScores, newGame, resetStats } = game;
   const [sheet, setSheet] = useState<Sheet>(null);
   const close = () => setSheet(null);
 
@@ -57,6 +61,7 @@ const Root: React.FC = () => {
       {playing ? (
         <GameScreen
           game={game}
+          settings={settings}
           paused={sheet !== null}
           onOpenMenu={() => setPlaying(false)}
           onOpenRules={() => setSheet('rules')}
@@ -68,17 +73,28 @@ const Root: React.FC = () => {
           onNewGame={() => setSheet('setup')}
           onScores={() => setSheet('scores')}
           onRules={() => setSheet('rules')}
+          onSettings={() => setSheet('settings')}
         />
       )}
 
       <StatsScreen
         visible={sheet === 'scores'}
         stats={stats}
+        highScores={highScores}
+        initialMode={state.mode}
         onClose={close}
         onReset={resetStats}
       />
 
       <RulesScreen visible={sheet === 'rules'} onClose={close} />
+
+      <SettingsScreen
+        visible={sheet === 'settings'}
+        settings={settings}
+        shakeSupported={SHAKE_SUPPORTED}
+        onChange={update}
+        onClose={close}
+      />
 
       <SetupScreen
         visible={sheet === 'setup'}

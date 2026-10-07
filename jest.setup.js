@@ -96,6 +96,14 @@ jest.mock('expo-sensors', () => ({
   },
 }));
 
+// No audio output under test. The player is a stub that records nothing.
+jest.mock('expo-audio', () => ({
+  createAudioPlayer: jest.fn(() => ({
+    play: jest.fn(),
+    seekTo: jest.fn(() => Promise.resolve()),
+  })),
+}));
+
 // In-memory AsyncStorage, so persistence paths run without a native module.
 jest.mock('@react-native-async-storage/async-storage', () => {
   let store = {};

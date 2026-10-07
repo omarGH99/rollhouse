@@ -15,7 +15,7 @@ interface Props {
   onNewGame: () => void;
   onScores: () => void;
   onRules: () => void;
-  onSettings?: () => void;
+  onSettings: () => void;
 }
 
 const accent = accents[0];
@@ -147,9 +147,7 @@ export const MenuScreen: React.FC<Props> = ({
         <View style={styles.links}>
           <LinkButton icon="trophy-outline" label="High scores" onPress={onScores} />
           <LinkButton icon="help-circle-outline" label="How to play" onPress={onRules} />
-          {onSettings ? (
-            <LinkButton icon="options-outline" label="Settings" onPress={onSettings} />
-          ) : null}
+          <LinkButton icon="options-outline" label="Settings" onPress={onSettings} />
         </View>
       </View>
     </View>

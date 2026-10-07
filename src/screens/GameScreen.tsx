@@ -16,10 +16,12 @@ import { RollhouseGame } from '../hooks/useRollhouseGame';
 import { SHAKE_SUPPORTED, useShake } from '../hooks/useShake';
 import { awaitsTurnStart, humanSeatCount } from '../logic/gameReducer';
 import { MODES, roundsFor } from '../logic/modes';
+import { Settings } from '../logic/settings';
 import { palette, seatAccent, spacing } from '../theme';
 
 interface Props {
   game: RollhouseGame;
+  settings: Settings;
   /** Something is open over the game, so it should not react to a shake. */
   paused: boolean;
   onOpenMenu: () => void;
@@ -43,7 +45,13 @@ const HeaderButton: React.FC<{
 );
 
 /** A game in play: the table, and the pages that open over it during a turn. */
-export const GameScreen: React.FC<Props> = ({ game, paused, onOpenMenu, onOpenRules }) => {
+export const GameScreen: React.FC<Props> = ({
+  game,
+  settings,
+  paused,
+  onOpenMenu,
+  onOpenRules,
+}) => {
   const insets = useSafeAreaInsets();
   const {
     state,
@@ -52,6 +60,9 @@ export const GameScreen: React.FC<Props> = ({ game, paused, onOpenMenu, onOpenRu
     canRoll,
     undoPlayer,
     aiThinking,
+    bestRank,
+    hint,
+    requestHint,
     pendingAchievements,
     acknowledgeAchievements,
     roll,
@@ -103,7 +114,22 @@ export const GameScreen: React.FC<Props> = ({ game, paused, onOpenMenu, onOpenRu
     return () => clearTimeout(timer);
   }, [showThrow, state.hasRolled, state.rollsLeft]);
 
-  useShake(roll, showThrow && canRoll && !paused);
+  useShake(roll, showThrow && canRoll && !paused && settings.shake);
+
+  // A hint that says "throw again" is about the dice, so it is shown on the
+  // dice page. Keyed on the hint alone: leaving that page afterwards must not
+  // drag the player straight back to it.
+  useEffect(() => {
+    if (hint?.keep && hint.keep.length < state.dice.length) setThrowOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hint]);
+
+  const canHint = settings.hints && humanTurn && state.hasRolled;
+  // On the table a hint points at a box, but only once the advice is to score.
+  const suggested =
+    hint && (hint.keep === null || hint.keep.length === state.dice.length)
+      ? hint.box
+      : null;
 
   /** Rolling from the table goes via the dice page, so the throw is seen there. */
   const throwFromTable = () => {
@@ -154,6 +180,9 @@ export const GameScreen: React.FC<Props> = ({ game, paused, onOpenMenu, onOpenRu
           {tableUndo ? (
             <HeaderButton icon="arrow-undo-outline" label="Undo last score" onPress={undo} />
           ) : null}
+          {canHint ? (
+            <HeaderButton icon="bulb-outline" label="Hint" onPress={requestHint} />
+          ) : null}
           <HeaderButton icon="help" label="How to play" onPress={onOpenRules} />
           <HeaderButton icon="menu" label="Menu" onPress={onOpenMenu} />
         </View>
@@ -189,6 +218,7 @@ export const GameScreen: React.FC<Props> = ({ game, paused, onOpenMenu, onOpenRu
           previewNonce={state.rollNonce}
           selectable={!boardLocked && state.hasRolled}
           lastScored={state.lastScored}
+          suggested={suggested}
           onSelect={score}
         />
       </FitToHeight>
@@ -204,7 +234,9 @@ export const GameScreen: React.FC<Props> = ({ game, paused, onOpenMenu, onOpenRu
         canRoll={canRoll}
         previews={previews}
         multipliers={multipliers}
-        shakeSupported={SHAKE_SUPPORTED}
+        shakeSupported={SHAKE_SUPPORTED && settings.shake}
+        hint={hint}
+        onHint={settings.hints ? requestHint : undefined}
         onRoll={roll}
         onToggleHold={toggleHold}
         onDone={() => setThrowOpen(false)}
@@ -230,6 +262,7 @@ export const GameScreen: React.FC<Props> = ({ game, paused, onOpenMenu, onOpenRu
         players={state.players}
         scores={state.scores}
         totals={totals}
+        bestRank={bestRank}
         achievements={pendingAchievements}
         onPlayAgain={() => {
           acknowledgeAchievements();

@@ -9,6 +9,7 @@ import { FeltBackdrop } from './FeltBackdrop';
 import { MAX_ROLLS } from '../logic/gameReducer';
 import { CATEGORY_LABELS } from '../logic/scoring';
 import { Accent, fonts, palette, radius, spacing, textGlow } from '../theme';
+import { Hint } from '../hooks/useRollhouseGame';
 import { Category, DieState } from '../types';
 
 interface Props {
@@ -26,6 +27,10 @@ interface Props {
   multipliers: number[];
   /** The device can be shaken to throw, so the copy should say so. */
   shakeSupported: boolean;
+  /** Advice asked for on these dice, if any. */
+  hint?: Hint | null;
+  /** Ask for a hint; leave undefined to hide the button. */
+  onHint?: () => void;
   onRoll: () => void;
   onToggleHold: (dieId: number) => void;
   /** Leave for the scorecard. */
@@ -68,6 +73,8 @@ export const ThrowScreen: React.FC<Props> = ({
   previews,
   multipliers,
   shakeSupported,
+  hint = null,
+  onHint,
   onRoll,
   onToggleHold,
   onDone,
@@ -118,7 +125,21 @@ export const ThrowScreen: React.FC<Props> = ({
       ? `THROW AGAIN  ·  ${rollsLeft} LEFT`
       : 'NO THROWS LEFT';
 
-  const hint = !hasRolled
+  const boxName = hint
+    ? CATEGORY_LABELS[hint.box.category] +
+      (multipliers.length > 1 ? ` ×${multipliers[hint.box.column]}` : '')
+    : '';
+
+  /** The hint in words. Which dice it means is shown on the dice themselves. */
+  const advice = !hint
+    ? null
+    : hint.keep === null || hint.keep.length === dice.length
+      ? `Hint: score it in ${boxName}`
+      : hint.keep.length === 0
+        ? 'Hint: throw all five again'
+        : 'Hint: keep the marked dice and throw the rest';
+
+  const prompt = !hasRolled
     ? shakeSupported
       ? 'Shake your phone, or tap throw'
       : 'Tap throw to roll the dice'
@@ -151,6 +172,11 @@ export const ThrowScreen: React.FC<Props> = ({
           disabled={!hasRolled || rollsLeft === 0}
           onPress={() => onToggleHold(die.id)}
         />
+        {hint?.keep && hint.keep.length < dice.length && hint.keep.includes(die.id) ? (
+          <View pointerEvents="none" style={styles.keepTag}>
+            <Text style={styles.keepTagText}>KEEP</Text>
+          </View>
+        ) : null}
       </View>
     );
   };
@@ -167,6 +193,18 @@ export const ThrowScreen: React.FC<Props> = ({
       ]}
     >
       <FeltBackdrop accent={accent} />
+
+      {onHint && hasRolled ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Hint"
+          onPress={onHint}
+          hitSlop={10}
+          style={[styles.hintButton, { top: insets.top + spacing(5) }]}
+        >
+          <Ionicons name="bulb-outline" size={18} color={palette.brassBright} />
+        </Pressable>
+      ) : null}
 
       <View style={styles.header}>
         <Text
@@ -217,7 +255,9 @@ export const ThrowScreen: React.FC<Props> = ({
           ))}
         </View>
 
-        <Text style={styles.hint}>{hint}</Text>
+        <Text style={[styles.hint, advice !== null && styles.advice]}>
+          {advice ?? prompt}
+        </Text>
 
         <ActionButton
           label={throwLabel}
@@ -342,6 +382,42 @@ const styles = StyleSheet.create({
     letterSpacing: 1.4,
     textTransform: 'uppercase',
     color: palette.textMuted,
+  },
+  advice: {
+    color: palette.brassBright,
+    fontWeight: '700',
+  },
+  hintButton: {
+    position: 'absolute',
+    right: spacing(6),
+    zIndex: 1,
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: palette.hairline,
+    backgroundColor: palette.panelStrong,
+  },
+  keepTag: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: -16,
+    alignItems: 'center',
+  },
+  keepTagText: {
+    paddingHorizontal: spacing(1.5),
+    paddingVertical: 1,
+    borderRadius: radius.sm,
+    overflow: 'hidden',
+    backgroundColor: palette.brass,
+    color: palette.cardInk,
+    fontFamily: fonts.body,
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1.2,
   },
   throw: {
     alignSelf: 'stretch',

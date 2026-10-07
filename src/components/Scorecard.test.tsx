@@ -171,3 +171,18 @@ describe('marathon', () => {
     expect(screen.getByText('0 in all')).toBeTruthy();
   });
 });
+
+describe('a hinted box', () => {
+  const live = { selectable: true, previews: [{ chance: 20, sixes: 12 }] };
+
+  it('is announced as suggested', () => {
+    setup({ ...live, suggested: { category: 'chance', column: 0 } });
+    expect(screen.getByLabelText('Chance, worth 20 points, suggested')).toBeTruthy();
+    expect(screen.getByLabelText('Sixes, worth 12 points')).toBeTruthy();
+  });
+
+  it('is not marked when there is no hint', () => {
+    setup(live);
+    expect(screen.queryByLabelText(/suggested$/)).toBeNull();
+  });
+});

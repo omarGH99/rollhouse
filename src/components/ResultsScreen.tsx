@@ -26,6 +26,8 @@ interface Props {
   scores: ScoreSheet[][];
   /** Final score per seat, column multipliers applied. */
   totals: number[];
+  /** Best place taken on the high-score table, from 0; null if none. */
+  bestRank: number | null;
   /** Earned by this game — shown once, then acknowledged. */
   achievements: Achievement[];
   onPlayAgain: () => void;
@@ -54,6 +56,7 @@ export const ResultsScreen: React.FC<Props> = ({
   players,
   scores,
   totals,
+  bestRank,
   achievements,
   onPlayAgain,
   onMenu,
@@ -126,6 +129,17 @@ export const ResultsScreen: React.FC<Props> = ({
                 ? `${winners.length} players finished level on ${totals[winner]}`
                 : `by ${margin} point${margin === 1 ? '' : 's'}`}
           </Text>
+
+          {bestRank !== null ? (
+            <View style={[styles.placed, { borderColor: palette.brass }]}>
+              <Ionicons name="ribbon-outline" size={15} color={palette.brassBright} />
+              <Text style={styles.placedText}>
+                {bestRank === 0
+                  ? `NEW ${MODES[mode].label.toUpperCase()} HIGH SCORE`
+                  : `NUMBER ${bestRank + 1} ON THE ${MODES[mode].label.toUpperCase()} BOARD`}
+              </Text>
+            </View>
+          ) : null}
 
           <View style={styles.totalsRow}>
             {players.map((player, seat) => (
@@ -231,6 +245,24 @@ export const ResultsScreen: React.FC<Props> = ({
 const styles = StyleSheet.create({
   root: {
     zIndex: 60,
+  },
+  placed: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: spacing(2),
+    marginTop: spacing(4),
+    paddingVertical: spacing(2),
+    paddingHorizontal: spacing(4),
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  placedText: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1.6,
+    color: palette.brassBright,
   },
   scrim: {
     backgroundColor: 'rgba(5, 13, 9, 0.95)',

@@ -11,15 +11,32 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { FeltPanel } from './FeltPanel';
+import { HighScores, ScoreEntry } from '../logic/highScores';
+import { GAME_MODES, MODES } from '../logic/modes';
 import { ACHIEVEMENTS, Stats, averageScore } from '../logic/stats';
 import { accents, fonts, palette, radius, spacing } from '../theme';
+import { GameMode } from '../types';
 
 interface Props {
   visible: boolean;
   stats: Stats;
+  highScores: HighScores;
+  /** Which game type's table to open on. */
+  initialMode: GameMode;
   onClose: () => void;
   onReset: () => void;
 }
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** "7 Oct" — spelled out by hand so it reads the same on every device. */
+const shortDate = (ms: number): string => {
+  const date = new Date(ms);
+  return `${date.getDate()} ${MONTHS[date.getMonth()]}`;
+};
+
+const company = (entry: ScoreEntry): string =>
+  entry.opponents === 0 ? 'solo' : `table of ${entry.opponents + 1}`;
 
 const accent = accents[0];
 
@@ -41,11 +58,19 @@ const Tile: React.FC<{ label: string; value: string | number; wide?: boolean }> 
 export const StatsScreen: React.FC<Props> = ({
   visible,
   stats,
+  highScores,
+  initialMode,
   onClose,
   onReset,
 }) => {
   const insets = useSafeAreaInsets();
   const [confirmingReset, setConfirmingReset] = useState(false);
+  const [mode, setMode] = useState<GameMode>(initialMode);
+
+  // Open on the game type last played, each time the sheet is shown.
+  useEffect(() => {
+    if (visible) setMode(initialMode);
+  }, [visible, initialMode]);
   const progress = useSharedValue(0);
 
   useEffect(() => {
@@ -75,10 +100,10 @@ export const StatsScreen: React.FC<Props> = ({
 
       <Animated.View style={[styles.content, style]}>
         <View style={[styles.header, { paddingTop: insets.top + spacing(3) }]}>
-          <Text style={styles.title}>Your Record</Text>
+          <Text style={styles.title}>High Scores</Text>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Close stats"
+            accessibilityLabel="Close high scores"
             onPress={onClose}
             hitSlop={12}
             style={styles.close}
@@ -94,19 +119,70 @@ export const StatsScreen: React.FC<Props> = ({
           ]}
           showsVerticalScrollIndicator={false}
         >
-          {stats.gamesPlayed === 0 ? (
-            <Text style={styles.empty}>
-              No games finished yet. Play one through and your record will appear
-              here.
-            </Text>
-          ) : null}
+          <View style={styles.tabs}>
+            {GAME_MODES.map((option) => {
+              const selected = option === mode;
+              return (
+                <Pressable
+                  key={option}
+                  accessibilityRole="tab"
+                  accessibilityLabel={`${MODES[option].label} scores`}
+                  accessibilityState={{ selected }}
+                  onPress={() => setMode(option)}
+                  style={[
+                    styles.tab,
+                    selected && { borderColor: palette.brass, backgroundColor: accent.wash },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.tabText,
+                      { color: selected ? palette.brassBright : palette.textDim },
+                    ]}
+                  >
+                    {MODES[option].label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
 
+          <FeltPanel style={styles.board} intensity={20} elevation={0}>
+            {highScores[mode].length === 0 ? (
+              <Text style={styles.empty}>
+                No {MODES[mode].label} game finished yet. Play one through and the
+                score will be listed here.
+              </Text>
+            ) : (
+              highScores[mode].map((entry, rank) => (
+                <View key={rank} style={[styles.entry, rank > 0 && styles.entryRuled]}>
+                  <Text style={[styles.rank, rank === 0 && { color: accent.main }]}>
+                    {rank + 1}
+                  </Text>
+                  <View style={styles.entryText}>
+                    <Text numberOfLines={1} style={styles.entryName}>
+                      {entry.name}
+                    </Text>
+                    <Text style={styles.entryMeta}>
+                      {shortDate(entry.date)} · {company(entry)}
+                      {entry.hinted ? ' · with hints' : ''}
+                    </Text>
+                  </View>
+                  <Text style={[styles.entryScore, rank === 0 && { color: accent.main }]}>
+                    {entry.score}
+                  </Text>
+                </View>
+              ))
+            )}
+          </FeltPanel>
+
+          <Text style={styles.sectionTitle}>YOUR RECORD</Text>
           <View style={styles.tiles}>
             <Tile label="GAMES" value={stats.gamesPlayed} />
             <Tile label="WINS" value={stats.humanWins} />
             <Tile label="WIN RATE" value={winRate} />
-            <Tile label="BEST" value={stats.bestScore} />
-            <Tile label="AVERAGE" value={averageScore(stats)} />
+            <Tile label="CLASSIC BEST" value={stats.bestScore} />
+            <Tile label="CLASSIC AVG" value={averageScore(stats)} />
             <Tile label="ROLLHOUSES" value={stats.rollhouses} />
           </View>
 
@@ -153,7 +229,9 @@ export const StatsScreen: React.FC<Props> = ({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={
-              confirmingReset ? 'Confirm clearing your record' : 'Clear your record'
+              confirmingReset
+                ? 'Confirm clearing scores and record'
+                : 'Clear scores and record'
             }
             onPress={() => {
               if (confirmingReset) {
@@ -176,7 +254,9 @@ export const StatsScreen: React.FC<Props> = ({
                 confirmingReset && { color: palette.danger },
               ]}
             >
-              {confirmingReset ? 'Tap again to erase everything' : 'Clear my record'}
+              {confirmingReset
+                ? 'Tap again to erase everything'
+                : 'Clear scores and record'}
             </Text>
           </Pressable>
         </ScrollView>
@@ -226,8 +306,71 @@ const styles = StyleSheet.create({
     fontFamily: fonts.body,
     fontSize: 13,
     lineHeight: 20,
-    color: palette.textFaint,
-    marginBottom: spacing(4),
+    color: palette.textMuted,
+    paddingVertical: spacing(4),
+  },
+  tabs: {
+    flexDirection: 'row',
+    gap: spacing(2.5),
+    marginBottom: spacing(3),
+  },
+  tab: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing(2.5),
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: palette.hairline,
+    backgroundColor: palette.panel,
+  },
+  tabText: {
+    fontFamily: fonts.display,
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  board: {
+    paddingHorizontal: spacing(4),
+    borderRadius: radius.md,
+  },
+  entry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing(3),
+    paddingVertical: spacing(2.5),
+  },
+  entryRuled: {
+    borderTopWidth: StyleSheet.hairlineWidth * 2,
+    borderTopColor: palette.hairlineSoft,
+  },
+  rank: {
+    width: 22,
+    textAlign: 'center',
+    fontFamily: fonts.display,
+    fontSize: 16,
+    fontWeight: '700',
+    color: palette.textMuted,
+  },
+  entryText: {
+    flex: 1,
+  },
+  entryName: {
+    fontFamily: fonts.body,
+    fontSize: 14,
+    fontWeight: '700',
+    color: palette.textLight,
+  },
+  entryMeta: {
+    marginTop: 1,
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: palette.textMuted,
+  },
+  entryScore: {
+    fontFamily: fonts.numeric,
+    fontSize: 20,
+    fontWeight: '800',
+    color: palette.textLight,
   },
   tiles: {
     flexDirection: 'row',

@@ -131,3 +131,56 @@ describe('out of throws', () => {
     expect(onToggleHold).not.toHaveBeenCalled();
   });
 });
+
+describe('hints', () => {
+  const box = { category: 'chance' as const, column: 0 };
+
+  it('has no hint button unless hints are switched on', () => {
+    setup(rolled);
+    expect(screen.queryByLabelText('Hint')).toBeNull();
+  });
+
+  it('offers a hint once the dice are out, not before', () => {
+    setup({ onHint: jest.fn() });
+    expect(screen.queryByLabelText('Hint')).toBeNull();
+  });
+
+  it('asks for one on a tap', () => {
+    const onHint = jest.fn();
+    setup({ ...rolled, onHint });
+    fireEvent.press(screen.getByLabelText('Hint'));
+    expect(onHint).toHaveBeenCalled();
+  });
+
+  it('marks the dice to keep', () => {
+    setup({ ...rolled, onHint: jest.fn(), hint: { keep: [0, 3], box } });
+    expect(screen.getAllByText('KEEP')).toHaveLength(2);
+    expect(screen.getByText('Hint: keep the marked dice and throw the rest')).toBeTruthy();
+  });
+
+  it('says to throw everything when nothing is worth keeping', () => {
+    setup({ ...rolled, onHint: jest.fn(), hint: { keep: [], box } });
+    expect(screen.queryByText('KEEP')).toBeNull();
+    expect(screen.getByText('Hint: throw all five again')).toBeTruthy();
+  });
+
+  it('names the box when the advice is to score', () => {
+    setup({ ...rolled, onHint: jest.fn(), hint: { keep: [0, 1, 2, 3, 4], box } });
+    expect(screen.queryByText('KEEP')).toBeNull();
+    expect(screen.getByText('Hint: score it in Chance')).toBeTruthy();
+  });
+
+  it('names the column too when the card has several', () => {
+    setup({
+      hasRolled: true,
+      rollsLeft: 0,
+      rollNonce: 3,
+      canRoll: false,
+      multipliers: [1, 2, 3],
+      previews: [{}, {}, {}],
+      onHint: jest.fn(),
+      hint: { keep: null, box: { category: 'chance', column: 2 } },
+    });
+    expect(screen.getByText('Hint: score it in Chance ×3')).toBeTruthy();
+  });
+});

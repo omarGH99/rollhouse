@@ -20,7 +20,10 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1A0A0D"
       },
-      "package": "com.omargh99.rollhouse"
+      "package": "com.omargh99.rollhouse",
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "plugins": [
       "expo-asset",
@@ -43,14 +46,14 @@
     "runtimeVersion": {
       "policy": "sdkVersion"
     },
+    "owner": "omar_safar",
     "extra": {
       "eas": {
-        "projectId": "6deb76d5-27dd-4933-95ef-7845f01e023f"
+        "projectId": "e00749bc-d714-4611-b641-d3eb31cf6b75"
       }
     },
-    "owner": "omar_safar",
     "updates": {
-      "url": "https://u.expo.dev/6deb76d5-27dd-4933-95ef-7845f01e023f"
+      "url": "https://u.expo.dev/e00749bc-d714-4611-b641-d3eb31cf6b75"
     }
   }
 }

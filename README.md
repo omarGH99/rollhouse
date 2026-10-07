@@ -30,12 +30,29 @@ More in [docs/screenshots](docs/screenshots).
 
 ## Play it
 
-There is no public build yet. To try it:
+### Android
 
-- **In a browser:** `npm install`, then `npm run web`.
-- **On a phone:** `npm start`, then scan the code it prints with
-  [Expo Go](https://apps.apple.com/app/expo-go/id982107779) (iPhone) or the
-  Expo Go app (Android). Expo Go must be **SDK 54**.
+Scan to download and install the app. Nothing else is needed.
+
+<img src="docs/qr-android-apk.png" width="240" alt="QR code that downloads the Android app" />
+
+Android will warn about installing from an unknown source, which is expected
+for anything outside the Play Store.
+
+### iPhone, or Android without installing
+
+Install **Expo Go** ([App Store](https://apps.apple.com/app/expo-go/id982107779),
+[Google Play](https://play.google.com/store/apps/details?id=host.exp.exponent)),
+then scan:
+
+<img src="docs/qr-iphone-expo-go.png" width="240" alt="QR code that opens the game in Expo Go" />
+
+Expo Go must be **SDK 54**.
+
+### From source
+
+`npm install`, then `npm run web` for a browser, or `npm start` and scan the
+code it prints with Expo Go.
 
 Shaking to throw, vibration and sound only work on a phone.
 
